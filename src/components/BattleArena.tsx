@@ -7,9 +7,10 @@ import { EMOTION_COLORS } from './NitzCanvas';
 interface BattleArenaProps {
   progress: PlayerProgress;
   onSaveProgress: (newProg: PlayerProgress) => void;
+  onDefeat?: () => void;
 }
 
-export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgress }) => {
+export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgress, onDefeat }) => {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Equipments from progress
@@ -55,6 +56,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
   const [enemyMaxHp] = useState<number>(450);
   const [round, setRound] = useState<number>(1);
   const [battleOver, setBattleOver] = useState<boolean>(false);
+  const [enemyBurnTicks, setEnemyBurnTicks] = useState<number>(0);
+  const [playerMitigationActive, setPlayerMitigationActive] = useState<boolean>(false);
   const [victory, setVictory] = useState<boolean>(false);
 
   // FX animation states
@@ -136,7 +139,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
   };
 
   // Action / Combat tactics (Joint player & Nitz Turn)
-  const handleTactic = (tacticStyle: 'emision' | 'cola' | 'refugio') => {
+  const handleTactic = (tacticStyle: 'weapon' | 'shield' | 'armor') => {
     if (isFighting || battleOver) return;
     setIsFighting(true);
 
@@ -152,44 +155,77 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
     let playerDmg = 0;
     let playerLog = '';
 
-    if (tacticStyle === 'emision') {
+    if (tacticStyle === 'weapon') {
       setWeaponAnimationState('swing');
-      playerDmg = Math.floor((48 + progress.phase * 12) * dmgMult * (isAmplified ? 2.0 : 1.0));
-      playerLog = `⚔️ [EMBESTIDA DEL GUARDIÁN]: Blandes ${activeWeapon?.name || 'tus puños'} con agresividad e infliges ${playerDmg} de daño directo al enemigo!`;
-      triggerAudioTone(220, 'sawtooth', 0.45);
+      const isLegendary = activeWeapon?.name.includes('Sable del Alba');
+      const isEpic = activeWeapon?.name.includes('Mandoble');
       
-      setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#f87171' }]);
+      if (isLegendary) {
+        playerDmg = Math.floor((65 + progress.phase * 15) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        setEnemyBurnTicks(2);
+        playerLog = `⚔️ [IRA SOLAR]: Blandes Sable del Alba Legendario infligiendo ${playerDmg} de daño directo e impregnando quemadura solar (2 turnos).`;
+        triggerAudioTone(660, 'sawtooth', 0.5);
+        setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#f59e0b' }]);
+      } else if (isEpic) {
+        playerDmg = Math.floor((50 + progress.phase * 12) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        playerLog = `⚔️ [TAJO SOMBRÍO]: Blandes Mandoble de Bruma Astral infligiendo ${playerDmg} de daño y desgarrando barreras del oponente.`;
+        triggerAudioTone(440, 'triangle', 0.5);
+        setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#c084fc' }]);
+      } else {
+        playerDmg = Math.floor((38 + progress.phase * 8) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        playerLog = `⚔️ [CORTE RÁPIDO]: Blandes Espada de Novicio infligiendo ${playerDmg} de daño continuo.`;
+        triggerAudioTone(220, 'sawtooth', 0.45);
+        setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#f87171' }]);
+      }
       setEnemyOffset({ x: Math.random() * 20 - 10, y: -20 });
       setShakeAmount(10);
-    } else if (tacticStyle === 'cola') {
+    } else if (tacticStyle === 'shield') {
       setWeaponAnimationState('cast');
-      playerDmg = Math.floor((34 + progress.phase * 8) * dmgMult * (isAmplified ? 2.0 : 1.0));
-      playerLog = `🌀 [RÁFAGA KINÉTICA DE ENERGÍA]: Alzas tu reliquia y disparas un proyectil por ${playerDmg} de daño elemental directa!`;
-      triggerAudioTone(440, 'triangle', 0.6);
+      const isStarPlate = activeShield?.name.includes('Estelares');
       
-      setActiveFlashes(prev => [...prev, { x: 360, y: 120, text: `-${playerDmg}!`, color: '#60a5fa' }]);
-      setEnemyOffset({ x: Math.random() * 20 - 10, y: -15 });
-      setShakeAmount(7);
-    } else if (tacticStyle === 'refugio') {
-      setWeaponAnimationState('idle');
-      // Repair shield or heal
-      const shieldRegen = Math.floor(currentShieldAttr.shieldCap * 0.45) || 45;
-      const hpHeal = 35 + progress.phase * 8;
-      setPlayerHp(prev => Math.min(prev + hpHeal, 350 + progress.phase * 50));
-      if (currentShieldAttr.shieldCap > 0) {
-        setPlayerShield(prev => Math.min(prev + shieldRegen, currentShieldAttr.shieldCap));
+      if (isStarPlate) {
+        const shieldRegen = 60 + progress.phase * 8;
+        setPlayerShield(prev => Math.min(currentShieldAttr.shieldCap, prev + shieldRegen));
+        playerLog = `🛡️ [BARRERA RÚNICA]: Canalizas placas estelares y restauras +${shieldRegen} escudo protector.`;
+        triggerAudioTone(523.25, 'sine', 0.6);
+        setActiveFlashes(prev => [...prev, { x: 100, y: 220, text: `+${shieldRegen} Escudo!`, color: '#38bdf8' }]);
+      } else {
+        const shieldRegen = 30 + progress.phase * 4;
+        setPlayerShield(prev => Math.min(Math.max(40, currentShieldAttr.shieldCap), prev + shieldRegen));
+        playerLog = `🛡️ [GUARDIA SIMPLE]: Levantas tus brazos bloqueando y restaurando +${shieldRegen} de escudo básico.`;
+        triggerAudioTone(330, 'sine', 0.4);
+        setActiveFlashes(prev => [...prev, { x: 100, y: 220, text: `+${shieldRegen} Escudo!`, color: '#94a3b8' }]);
       }
-      playerDmg = Math.floor(12 * dmgMult);
-      playerLog = `🛡️ [CONTRAESCUDO Y DEFENSA]: Te refugias restaurando +${hpHeal} HP ${currentShieldAttr.shieldCap > 0 ? `y +${shieldRegen} Escudo` : ''}, infundiendo un daño residual de ${playerDmg}.`;
-      triggerAudioTone(330, 'sine', 0.8);
+      setShakeAmount(4);
+    } else if (tacticStyle === 'armor') {
+      setWeaponAnimationState('idle');
+      const isScales = activeArmor?.name.includes('Escamas');
+      const hpHeal = (isScales ? 45 : 25) + progress.phase * 6;
+      setPlayerHp(prev => Math.min(350 + progress.phase * 50, prev + hpHeal));
       
+      if (isScales) {
+        setPlayerMitigationActive(true);
+        playerLog = `🛡️ [ESCAMA SAGRADA]: Endureces tu Cota de Escamas Divinas, curándote +${hpHeal} HP y mitigando 50% de daño en el próximo turno.`;
+        triggerAudioTone(783.99, 'sine', 0.8);
+      } else {
+        playerLog = `🛡️ [REFUGIO COMÚN]: Te resguardas curándote +${hpHeal} HP de forma pasiva.`;
+        triggerAudioTone(330, 'sine', 0.8);
+      }
       setActiveFlashes(prev => [...prev, { x: 100, y: 220, text: `+${hpHeal} HP!`, color: '#34d399' }]);
       setShakeAmount(2);
     }
 
     roundLogs.push(playerLog);
 
-    let nextEnemyHp = Math.max(0, enemyHp - playerDmg);
+    // Burn check:
+    let burnDmg = 0;
+    if (enemyBurnTicks > 0) {
+      burnDmg = 15;
+      setEnemyBurnTicks(prev => prev - 1);
+      roundLogs.push(`🔥 [QUEMADURA SOLAR]: El Nitz Korrumpido sufre ${burnDmg} de daño por fuego continuo.`);
+    }
+
+    let nextEnemyHp = Math.max(0, enemyHp - playerDmg - burnDmg);
 
     // ====== FASE 2: ACCIÓN DE TU NITZ (CON IA O CON ORDEN DIRECTA) ======
     if (nextEnemyHp > 0) {
@@ -285,6 +321,11 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
       setEnemyOffset({ x: 0, y: 0 });
 
       let enemyBaseDmg = Math.floor(40 + Math.random() * 25 + progress.phase * 4);
+      if (playerMitigationActive) {
+        enemyBaseDmg = Math.floor(enemyBaseDmg * 0.5);
+        setPlayerMitigationActive(false);
+        roundLogs.push(`🛡️ ¡Mitigación del 50% activa por tu Escama Sagrada!`);
+      }
 
       // Decidir objetivo: tu Nitz (35% de probabilidad) o tú el Guardián (65%).
       // Pero si se ordenó PROTEGER, o es personalidad defensiva, intercepta por completo!
@@ -342,6 +383,11 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
           setBattleOver(true);
           roundLogs.push('💀 Has sido derrotado. Tu Nitz místico se interpone para retirarte a salvo de regreso en la taberna.');
           triggerAudioTone(85, 'sine', 1.2);
+          if (onDefeat) {
+            setTimeout(() => {
+              onDefeat();
+            }, 3000);
+          }
         }
       }
 
@@ -355,7 +401,7 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
   };
 
   const handleReset = () => {
-    setPlayerHp(250 + progress.phase * 50);
+    setPlayerHp(350 + progress.phase * 50);
     setPlayerShield(currentShieldAttr.shieldCap);
     setNitzHp(220 + progress.phase * 30);
     setEnemyHp(450);
@@ -366,6 +412,8 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
     setBattleReport([]);
     setIsFighting(false);
     setActiveTonic(false);
+    setEnemyBurnTicks(0);
+    setPlayerMitigationActive(false);
   };
 
   // Interactive joint team graphics drawing inside canvas
@@ -960,28 +1008,28 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
                 {!battleOver ? (
                   <>
                     <button
-                      onClick={() => handleTactic('emision')}
+                      onClick={() => handleTactic('weapon')}
                       disabled={isFighting}
                       className="flex-1 sm:flex-initial p-2 px-3.5 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-1 active:scale-95 disabled:opacity-40"
                     >
                       <Flame className="w-4 h-4" />
-                      <span>Emisión</span>
+                      <span>{activeWeapon?.name.includes('Sable del Alba') ? 'Ira Solar' : activeWeapon?.name.includes('Mandoble') ? 'Tajo Sombrío' : 'Corte Rápido'}</span>
                     </button>
                     <button
-                      onClick={() => handleTactic('cola')}
+                      onClick={() => handleTactic('shield')}
                       disabled={isFighting}
                       className="flex-1 sm:flex-initial p-2 px-3.5 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-400 hover:to-cyan-300 text-white rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-1 active:scale-95 disabled:opacity-40"
                     >
                       <Zap className="w-4 h-4" />
-                      <span>Ráfaga</span>
+                      <span>{activeShield?.name.includes('Estelares') ? 'Barrera Rúnica' : 'Guardia Simple'}</span>
                     </button>
                     <button
-                      onClick={() => handleTactic('refugio')}
+                      onClick={() => handleTactic('armor')}
                       disabled={isFighting}
                       className="flex-1 sm:flex-initial p-2 px-3.5 bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-400 hover:to-emerald-300 text-white rounded-lg text-xs font-bold transition-all flex flex-col items-center gap-1 active:scale-95 disabled:opacity-40"
                     >
                       <Shield className="w-4 h-4" />
-                      <span>Refugio</span>
+                      <span>{activeArmor?.name.includes('Escamas') ? 'Escama Sagrada' : 'Refugio Común'}</span>
                     </button>
                   </>
                 ) : (

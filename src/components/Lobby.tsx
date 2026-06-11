@@ -10,6 +10,7 @@ interface LobbyProps {
   playerUsername: string;
   playerPhase: number;
   playerDominant: string;
+  playerCompanionSummoned?: boolean;
   onNavigateToView: (view: any) => void;
 }
 
@@ -31,6 +32,7 @@ export const Lobby: React.FC<LobbyProps> = ({
   playerUsername, 
   playerPhase, 
   playerDominant, 
+  playerCompanionSummoned,
   onNavigateToView 
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>(INITIAL_MESSAGES);
@@ -46,6 +48,8 @@ export const Lobby: React.FC<LobbyProps> = ({
   // ThreeJS runtime references
   const mainPlayerMeshRef = useRef<THREE.Mesh | null>(null);
   const peerMeshesRef = useRef<Record<string, THREE.Mesh>>({});
+  const peerCompanionMeshesRef = useRef<Record<string, THREE.Mesh>>({});
+  const localCompanionMeshRef = useRef<THREE.Mesh | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
 
   // Listen to Firestore real-time collections for global chat and players
@@ -254,8 +258,27 @@ export const Lobby: React.FC<LobbyProps> = ({
     pRing.rotation.x = Math.PI / 2;
     mainPlayer.add(pRing);
 
+    // Summoned Nitz for local player
+    let localCompanionMesh: THREE.Mesh | null = null;
+    if (playerCompanionSummoned) {
+      const companionGeo = new THREE.SphereGeometry(0.3, 12, 12);
+      const companionMat = new THREE.MeshStandardMaterial({
+        color: localColor,
+        emissive: localColor,
+        emissiveIntensity: 0.35,
+        roughness: 0.1
+      });
+      localCompanionMesh = new THREE.Mesh(companionGeo, companionMat);
+      localCompanionMesh.position.set(mainPlayer.position.x + 0.9, 0.95, mainPlayer.position.z + 0.9);
+      scene.add(localCompanionMesh);
+      localCompanionMeshRef.current = localCompanionMesh;
+    } else {
+      localCompanionMeshRef.current = null;
+    }
+
     // 9. Render Peer players walking randomly
     const peerColors = [0xec4899, 0xf59e0b, 0x3b82f6, 0x10b981];
+    peerCompanionMeshesRef.current = {};
     playersList.forEach((peer, index) => {
       const peerGeo = new THREE.SphereGeometry(0.6, 16, 12);
       const color = peerColors[index % peerColors.length];
@@ -282,6 +305,22 @@ export const Lobby: React.FC<LobbyProps> = ({
       const indicator = new THREE.Mesh(indicatorGeo, indicatorMat);
       indicator.position.y = 0.9;
       peerMesh.add(indicator);
+
+      // Render peer companion Nitz (simulate or real)
+      const shouldSummonCompanion = peer.companionSummoned !== undefined ? peer.companionSummoned : (index % 3 === 0);
+      if (shouldSummonCompanion) {
+        const peerCompanionGeo = new THREE.SphereGeometry(0.3, 12, 12);
+        const peerCompanionMat = new THREE.MeshStandardMaterial({
+          color: color,
+          emissive: color,
+          emissiveIntensity: 0.35,
+          roughness: 0.1
+        });
+        const peerCompanionMesh = new THREE.Mesh(peerCompanionGeo, peerCompanionMat);
+        peerCompanionMesh.position.set(peerMesh.position.x + 0.9, 0.95, peerMesh.position.z + 0.9);
+        scene.add(peerCompanionMesh);
+        peerCompanionMeshesRef.current[peer.id] = peerCompanionMesh;
+      }
     });
 
     // Keyboard controllers listener mapping
@@ -381,13 +420,36 @@ export const Lobby: React.FC<LobbyProps> = ({
       // Animate simulated other peers moving wiggles randomly
       Object.keys(peerMeshesRef.current).forEach((id, index) => {
         const peer = peerMeshesRef.current[id];
+        const companionMesh = peerCompanionMeshesRef.current[id];
         if (peer) {
           // Add a waving/scaling animation
           peer.position.y = 0.6 + Math.sin(elapsed * 3 + index) * 0.08;
           // Slowly rotate
           peer.rotation.y += 0.01;
+
+          // Companion follow logic
+          if (companionMesh) {
+            const targetX = peer.position.x - Math.sin(elapsed * 2 + index) * 0.95;
+            const targetZ = peer.position.z + Math.cos(elapsed * 2 + index) * 0.95;
+            const targetY = 0.95 + Math.sin(elapsed * 4.2 + index) * 0.12;
+            companionMesh.position.x += (targetX - companionMesh.position.x) * 0.1;
+            companionMesh.position.z += (targetZ - companionMesh.position.z) * 0.1;
+            companionMesh.position.y += (targetY - companionMesh.position.y) * 0.1;
+            companionMesh.rotation.y += 0.02;
+          }
         }
       });
+
+      // Chase local player
+      if (localCompanionMesh && mainPlayerMeshRef.current) {
+        const targetX = mainPlayerMeshRef.current.position.x - Math.sin(elapsed * 2) * 0.95;
+        const targetZ = mainPlayerMeshRef.current.position.z + Math.cos(elapsed * 2) * 0.95;
+        const targetY = 0.95 + Math.sin(elapsed * 4) * 0.12;
+        localCompanionMesh.position.x += (targetX - localCompanionMesh.position.x) * 0.1;
+        localCompanionMesh.position.z += (targetZ - localCompanionMesh.position.z) * 0.1;
+        localCompanionMesh.position.y += (targetY - localCompanionMesh.position.y) * 0.1;
+        localCompanionMesh.rotation.y += 0.02;
+      }
 
       renderer.render(scene, camera);
     };
@@ -405,7 +467,7 @@ export const Lobby: React.FC<LobbyProps> = ({
       renderer.dispose();
       scene.clear();
     };
-  }, [playerDominant, playersList.length]);
+  }, [playerDominant, playersList.length, playerCompanionSummoned]);
 
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -579,6 +579,7 @@ export default function App() {
                     playerUsername={progress.username}
                     playerPhase={progress.phase}
                     playerDominant={dominantName}
+                    playerCompanionSummoned={progress.companionSummoned}
                     onNavigateToView={setCurrentView}
                   />
                 )}

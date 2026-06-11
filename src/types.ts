@@ -58,6 +58,7 @@ export interface PlayerProgress {
   equippedWeaponId?: string;
   equippedShieldId?: string;
   equippedArmorId?: string;
+  companionSummoned?: boolean;
 }
 
 export interface LobbyPlayer {
@@ -86,4 +87,27 @@ export interface ChatMessage {
   text: string;
   timestamp: string;
   isNitz?: boolean;
+}
+
+export interface PvPDuelSession {
+  id: string;
+  status: 'pending' | 'active' | 'rejected' | 'finished';
+  challengerId: string;
+  challengerName: string;
+  defenderId: string;
+  defenderName: string;
+  turn: 'challenger' | 'defender';
+  challengerHp: number;
+  challengerMaxHp: number;
+  challengerShield: number;
+  challengerMaxShield: number;
+  defenderHp: number;
+  defenderMaxHp: number;
+  defenderShield: number;
+  defenderMaxShield: number;
+  challengerAction?: string;
+  defenderAction?: string;
+  logs: string[];
+  winnerId?: string;
+  lootAtRisk?: string;
 }

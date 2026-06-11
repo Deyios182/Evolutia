@@ -1,10 +1,10 @@
 {
-  "projectId": "remixed-project-id",
-  "appId": "remixed-app-id",
-  "apiKey": "remixed-api-key",
-  "authDomain": "remixed-auth-domain",
-  "firestoreDatabaseId": "remixed-firestore-database-id",
-  "storageBucket": "remixed-storage-bucket",
-  "messagingSenderId": "remixed-messaging-sender-id",
-  "measurementId": "remixed-measurement-id"
+  "projectId": "evolutia-game",
+  "appId": "1:774382401056:web:316340032c176bafb86e45",
+  "apiKey": "AIzaSyANMY2LFjkwI9EZJpWUMFrEizWiUP2B6QM",
+  "authDomain": "evolutia-game.firebaseapp.com",
+  "firestoreDatabaseId": "(default)",
+  "storageBucket": "evolutia-game.firebasestorage.app",
+  "messagingSenderId": "774382401056",
+  "measurementId": "G-R909SY50RZ"
 }

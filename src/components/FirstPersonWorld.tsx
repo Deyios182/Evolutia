@@ -9,6 +9,7 @@ import {
   Heart, 
   Sparkles, 
   Sword, 
+  Zap,
   Play, 
   Ghost, 
   Skull, 
@@ -30,7 +31,7 @@ import {
 import * as THREE from 'three';
 import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName } from '../types';
 import { db, auth } from '../firebase';
-import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, arrayUnion } from 'firebase/firestore';
+import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, arrayUnion, addDoc } from 'firebase/firestore';
 
 // Subcomponents to render as immersive overlays
 import { MyHome } from './MyHome';
@@ -99,7 +100,13 @@ export function FirstPersonWorld({
   const [pvpEnabled, setPvpEnabled] = useState<boolean>(false);
   const [praiseMessage, setPraiseMessage] = useState<string | null>(null);
 
+  // Extraction States (Arc Raiders style)
+  const [extractionActive, setExtractionActive] = useState<boolean>(false);
+  const [extractionTimeLeft, setExtractionTimeLeft] = useState<number>(0);
+
   // PVP Battle State
+  const [activeDuelId, setActiveDuelId] = useState<string | null>(null);
+  const [pendingDuelInvite, setPendingDuelInvite] = useState<any | null>(null);
   const [pvpDuel, setPvpDuel] = useState<{
     inCombat: boolean;
     rivalName: string;
@@ -137,6 +144,9 @@ export function FirstPersonWorld({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const keysDownRef = useRef<{ [key: string]: boolean }>({});
+  const companionMeshRef = useRef<THREE.Mesh | null>(null);
+  const companionRingRef = useRef<THREE.Mesh | null>(null);
+  const strikeNodeRef = useRef<InteractiveNode3D | null>(null);
 
   // Setup initial key listeners
   useEffect(() => {
@@ -390,6 +400,223 @@ export function FirstPersonWorld({
     return () => clearInterval(interval);
   }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled]);
 
+  // Listen for PvP duel challenges and state updates
+  useEffect(() => {
+    if (!auth.currentUser) return;
+
+    // 1. Listen for pending invites where we are the defender
+    const qInvites = collection(db, 'pvp_duels');
+    const unsubscribeInvites = onSnapshot(qInvites, (snapshot) => {
+      let inviteFound = false;
+      snapshot.forEach(docSnap => {
+        const data = docSnap.data();
+        if (data.defenderId === auth.currentUser?.uid && data.status === 'pending') {
+          setPendingDuelInvite({ id: docSnap.id, ...data });
+          inviteFound = true;
+        }
+      });
+      if (!inviteFound) {
+        setPendingDuelInvite(null);
+      }
+    });
+
+    return () => {
+      unsubscribeInvites();
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!activeDuelId || !auth.currentUser) return;
+
+    const docRef = doc(db, 'pvp_duels', activeDuelId);
+    const unsubscribeDuel = onSnapshot(docRef, (docSnap) => {
+      if (!docSnap.exists()) return;
+      const data = docSnap.data();
+      const isChallenger = data.challengerId === auth.currentUser?.uid;
+
+      if (data.status === 'rejected') {
+        triggerNotification(`⚔️ Duelo rechazado por ${isChallenger ? data.defenderName : data.challengerName}.`);
+        setActiveDuelId(null);
+        setPvpDuel(null);
+        return;
+      }
+
+      setPvpDuel({
+        inCombat: data.status === 'active' || data.status === 'finished',
+        rivalName: isChallenger ? data.defenderName : data.challengerName,
+        rivalId: isChallenger ? data.defenderId : data.challengerId,
+        rivalHp: isChallenger ? data.defenderHp : data.challengerHp,
+        rivalMaxHp: isChallenger ? data.defenderMaxHp : data.challengerMaxHp,
+        rivalShield: isChallenger ? data.defenderShield : data.challengerShield,
+        playerHp: isChallenger ? data.challengerHp : data.defenderHp,
+        playerMaxHp: isChallenger ? data.challengerMaxHp : data.defenderMaxHp,
+        playerShield: isChallenger ? data.challengerShield : data.defenderShield,
+        logs: data.logs || []
+      });
+
+      if (data.status === 'finished') {
+        // Resolve loot drop on defeat / claim loot on victory
+        const isWinner = data.winnerId === auth.currentUser?.uid;
+        
+        if (isWinner) {
+          const enemyLoot = isChallenger ? data.defenderLoot : data.challengerLoot;
+          if (enemyLoot) {
+            setTempBag(prevBag => {
+              const mergedBag = JSON.parse(JSON.stringify(prevBag)) as GatheringInventory;
+              const mats = ['wood', 'stone', 'metal', 'essence'] as const;
+              const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+              mats.forEach(m => {
+                rarities.forEach(r => {
+                  if (enemyLoot[m] && enemyLoot[m][r]) {
+                    mergedBag[m][r] += enemyLoot[m][r];
+                  }
+                });
+              });
+              return mergedBag;
+            });
+          }
+          triggerNotification(`🏆 ¡VICTORIA EXQUISITA! Has vencido y absorbido el botín de ${isChallenger ? data.defenderName : data.challengerName}.`);
+        } else if (data.winnerId === 'draw') {
+          setTempBag({
+            wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
+          });
+          setCurrentMap('cabin');
+          triggerNotification("💀 Duelo empatado. Ambos han colapsado y perdido sus recursos en la bruma.");
+        } else {
+          setTempBag({
+            wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
+            essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
+          });
+          setCurrentMap('cabin');
+          triggerNotification(`💀 Has sido derrotado por ${isChallenger ? data.defenderName : data.challengerName}. Perdiste todos tus recursos temporales.`);
+        }
+
+        setTimeout(() => {
+          setActiveDuelId(null);
+          setPvpDuel(null);
+        }, 5000);
+      }
+    });
+
+    return () => {
+      unsubscribeDuel();
+    };
+  }, [activeDuelId]);
+
+  const hasItemsInTempBag = (): boolean => {
+    const mats = ['wood', 'stone', 'metal', 'essence'] as const;
+    const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+    let found = false;
+    mats.forEach(m => {
+      rarities.forEach(r => {
+        if (tempBag[m][r] > 0) found = true;
+      });
+    });
+    return found;
+  };
+
+  const handleStartExtraction = () => {
+    if (extractionActive || !hasItemsInTempBag()) return;
+    
+    setExtractionActive(true);
+    setExtractionTimeLeft(15);
+    triggerNotification("🚀 Secuencia de extracción iniciada. ¡Defiende la zona!");
+
+    // Play initial portal sound
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(350, audioCtx.currentTime + 0.5);
+      gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.8);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.85);
+    } catch (_) {}
+  };
+
+  const triggerPvPAmbush = () => {
+    setActiveOverlay('arena');
+  };
+
+  const handleDefeatInArena = () => {
+    if (currentMap === 'map3') {
+      setTempBag({
+        wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
+      });
+      setCurrentMap('cabin');
+      triggerNotification("💀 Has sido derrotado en combate en la Zona Roja. Perdiste toda tu mochila temporal y fuiste teletransportado a la cabaña.");
+    }
+    setActiveOverlay('none');
+  };
+
+  // Countdown controller for extraction
+  useEffect(() => {
+    if (!extractionActive) return;
+
+    if (extractionTimeLeft <= 0) {
+      // SUCCESSFUL EXTRACTION!
+      setExtractionActive(false);
+      handleBankResourcesDirectly(); // secure resources to inventory!
+      setCurrentMap('lobby'); // return player safely to Lobby
+      triggerNotification("🏆 ¡Extracción exitosa! Tus recursos han sido almacenados de forma segura en el almacén.");
+      
+      // Play chiptune win sound
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(523.25, audioCtx.currentTime); // C5
+        osc.frequency.setValueAtTime(659.25, audioCtx.currentTime + 0.15); // E5
+        osc.frequency.setValueAtTime(783.99, audioCtx.currentTime + 0.3); // G5
+        osc.frequency.setValueAtTime(1046.50, audioCtx.currentTime + 0.45); // C6
+        gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.8);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.85);
+      } catch (_) {}
+      return;
+    }
+
+    // Check if player moved out of extraction zone (Faro coordinates x:0, z:-10)
+    const distanceToBeacon = Math.sqrt(Math.pow(playerX, 2) + Math.pow(playerZ - (-10), 2));
+    if (distanceToBeacon > 5.5) {
+      setExtractionActive(false);
+      setExtractionTimeLeft(0);
+      triggerNotification("⚠️ Extracción fallida: saliste de la zona de seguridad del faro.");
+      return;
+    }
+
+    // Interval to countdown
+    const timerId = setTimeout(() => {
+      if (pvpDuel?.inCombat || activeOverlay === 'arena') return; // pause countdown during battles!
+      
+      // 40% chance of rogue ambush every 4 seconds
+      if (extractionTimeLeft % 4 === 0 && Math.random() < 0.40) {
+        triggerPvPAmbush();
+        triggerNotification("🚨 ¡EMBOSCADA! Enemigos de Bruma interfieren con la extracción.");
+      }
+      setExtractionTimeLeft(prev => prev - 1);
+    }, 1000);
+
+    return () => clearTimeout(timerId);
+  }, [extractionActive, extractionTimeLeft, playerX, playerZ, pvpDuel?.inCombat, activeOverlay]);
+
 
   // Three.js dynamic rendering cycle loops
   useEffect(() => {
@@ -457,6 +684,56 @@ export function FirstPersonWorld({
     });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     scene.add(floorMesh);
+
+    // In Map 3, draw the Extraction Beacon
+    let extractionBeaconMesh: THREE.Mesh | null = null;
+    let extractionZoneRing: THREE.Mesh | null = null;
+    let extractionShieldMesh: THREE.Mesh | null = null;
+
+    if (currentMap === 'map3') {
+      // Beacon pole
+      const poleGeo = new THREE.CylinderGeometry(0.2, 0.25, 3.5, 8);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 });
+      extractionBeaconMesh = new THREE.Mesh(poleGeo, poleMat);
+      extractionBeaconMesh.position.set(0, 1.75, -10);
+      scene.add(extractionBeaconMesh);
+
+      // Glowing light at the top of the beacon
+      const lightGeo = new THREE.SphereGeometry(0.35, 12, 12);
+      const lightMat = new THREE.MeshBasicMaterial({
+        color: extractionActive ? 0x10b981 : 0xef4444,
+      });
+      const topLight = new THREE.Mesh(lightGeo, lightMat);
+      topLight.position.y = 1.85;
+      extractionBeaconMesh.add(topLight);
+
+      // Ring showing extraction bounds
+      const zoneGeo = new THREE.RingGeometry(4.9, 5.0, 32);
+      zoneGeo.rotateX(-Math.PI / 2);
+      const zoneMat = new THREE.MeshBasicMaterial({
+        color: extractionActive ? 0x10b981 : 0xef4444,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: 0.75
+      });
+      extractionZoneRing = new THREE.Mesh(zoneGeo, zoneMat);
+      extractionZoneRing.position.set(0, 0.05, -10);
+      scene.add(extractionZoneRing);
+
+      // Transparent shield dome when active
+      if (extractionActive) {
+        const shieldGeo = new THREE.SphereGeometry(5.0, 24, 24, 0, Math.PI * 2, 0, Math.PI / 2);
+        const shieldMat = new THREE.MeshBasicMaterial({
+          color: 0x10b981,
+          transparent: true,
+          opacity: 0.12,
+          side: THREE.DoubleSide
+        });
+        extractionShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
+        extractionShieldMesh.position.set(0, 0, -10);
+        scene.add(extractionShieldMesh);
+      }
+    }
 
     // Render floor grids details
     const gridHelper = new THREE.GridHelper(80, 40, 0xdec1ac, 0x3e425e);
@@ -574,6 +851,34 @@ export function FirstPersonWorld({
       }
     });
 
+    // Render Summoned Nitz Companion in open maps
+    let companionMesh: THREE.Mesh | null = null;
+    let companionRing: THREE.Mesh | null = null;
+    if (progress.companionSummoned && currentMap !== 'cabin') {
+      const nitzGeo = new THREE.SphereGeometry(0.45, 16, 16);
+      const nCol = currentDominant.colorHex;
+      const nitzMat = new THREE.MeshStandardMaterial({
+        color: nCol,
+        roughness: 0.1,
+        emissive: nCol,
+        emissiveIntensity: 0.45
+      });
+      companionMesh = new THREE.Mesh(nitzGeo, nitzMat);
+      companionMesh.position.set(playerX + 1.2, 1.2, playerZ - 1.2);
+      scene.add(companionMesh);
+      companionMeshRef.current = companionMesh;
+
+      const ringGeo = new THREE.TorusGeometry(0.6, 0.02, 4, 24);
+      const ringMat = new THREE.MeshBasicMaterial({ color: nCol, transparent: true, opacity: 0.7 });
+      companionRing = new THREE.Mesh(ringGeo, ringMat);
+      companionRing.rotation.x = Math.PI / 2;
+      companionMesh.add(companionRing);
+      companionRingRef.current = companionRing;
+    } else {
+      companionMeshRef.current = null;
+      companionRingRef.current = null;
+    }
+
     // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
     renderer.setSize(width, height);
@@ -630,6 +935,34 @@ export function FirstPersonWorld({
         }
       });
 
+      // Animate summoned companion follow behavior
+      if (companionMesh) {
+        let targetX = cameraRef.current ? cameraRef.current.position.x - Math.sin(cameraAngle) * 1.5 + Math.cos(cameraAngle) * 1.1 : playerX - Math.sin(cameraAngle) * 1.5 + Math.cos(cameraAngle) * 1.1;
+        let targetZ = cameraRef.current ? cameraRef.current.position.z + Math.cos(cameraAngle) * 1.5 + Math.sin(cameraAngle) * 1.1 : playerZ + Math.cos(cameraAngle) * 1.5 + Math.sin(cameraAngle) * 1.1;
+        let targetY = 1.35 + Math.sin(timer * 2.5) * 0.18;
+
+        if (strikeNodeRef.current) {
+          targetX = strikeNodeRef.current.x;
+          targetZ = strikeNodeRef.current.z;
+          targetY = 1.0;
+        }
+
+        companionMesh.position.x += (targetX - companionMesh.position.x) * 0.08;
+        companionMesh.position.z += (targetZ - companionMesh.position.z) * 0.08;
+        companionMesh.position.y += (targetY - companionMesh.position.y) * 0.08;
+
+        companionMesh.rotation.y += 0.025;
+        if (companionRing) {
+          companionRing.rotation.z -= 0.015;
+        }
+      }
+
+      // Pulse extraction shield
+      if (extractionShieldMesh) {
+        const scale = 1.0 + Math.sin(timer * 5) * 0.012;
+        extractionShieldMesh.scale.set(scale, scale, scale);
+      }
+
       // Float other players' avatars
       peerMeshes.forEach(pm => {
         pm.mesh.position.y = 1.2 + Math.sin(timer * 2.1 + pm.mesh.position.x) * 0.15;
@@ -665,7 +998,7 @@ export function FirstPersonWorld({
         mountRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [currentMap, activeNodes, onlinePlayers]);
+  }, [currentMap, activeNodes, onlinePlayers, progress.companionSummoned, extractionActive]);
 
   // Motion processing cycle (frame controller loops updating coordinates)
   useEffect(() => {
@@ -842,10 +1175,18 @@ export function FirstPersonWorld({
     } else if (nearNode.type === 'door_arena') {
       setActiveOverlay('arena');
     } else if (nearNode.type === 'tree' || nearNode.type === 'ore') {
+      // Trigger Nitz companion strike animation in 3D
+      if (progress.companionSummoned) {
+        strikeNodeRef.current = nearNode;
+        setTimeout(() => {
+          strikeNodeRef.current = null;
+        }, 800);
+      }
+
       // Click mining actions directly in 3D
       setActiveNodes(prev => prev.map(n => {
         if (n.id === nearNode.id) {
-          const nextClicks = (n.clicksCurrent || 0) + 1;
+          const nextClicks = (n.clicksCurrent || 0) + (progress.companionSummoned ? 2 : 1);
           const req = n.clicksRequired || 4;
 
           if (nextClicks >= req) {
@@ -865,7 +1206,7 @@ export function FirstPersonWorld({
               exp: progress.exp + expVal
             });
 
-            triggerNotification(`⭐ ¡Nodo purificado! Recibes materiales y +${expVal} EXP.`);
+            triggerNotification(`⭐ ¡Nodo purificado${progress.companionSummoned ? ' con ayuda de tu Nitz' : ''}! Recibes materiales y +${expVal} EXP.`);
             return { ...n, clicksCurrent: 0 };
           }
           return { ...n, clicksCurrent: nextClicks };
@@ -876,7 +1217,7 @@ export function FirstPersonWorld({
   };
 
   // Launch PvP Duel vs other active player in Map 3 (Zona Roja)
-  const handleLaunchPvPDuel = (rival: OnlinePlayer) => {
+  const handleLaunchPvPDuel = async (rival: OnlinePlayer) => {
     if (currentMap !== 'map3') return;
     if (!pvpEnabled) {
       triggerNotification("⚠️ Debes activar tu flag de Modo Hostíl para batallar en PvP");
@@ -887,165 +1228,357 @@ export function FirstPersonWorld({
       return;
     }
 
-    // Set up PvP metrics based on weapon stats
-    const pDmg = 30 + progress.phase * 5;
-    const rDmg = 25 + rival.phase * 4;
+    const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
+    const shields = progress.craftedItems.filter(item => item.subType === 'shield');
+    const armors = progress.craftedItems.filter(item => item.subType === 'armor');
 
-    setPvpDuel({
-      inCombat: true,
-      rivalName: rival.username,
-      rivalId: rival.id,
-      rivalHp: 150 + rival.phase * 30,
-      rivalMaxHp: 150 + rival.phase * 30,
-      rivalShield: 60,
-      playerHp: 150 + progress.phase * 30,
-      playerMaxHp: 150 + progress.phase * 30,
-      playerShield: 80,
-      logs: [`⚔️ ¡DUELO DE SABLES ACTIVO! Has emboscado a ${rival.username} en la bruma.`]
-    });
-  };
+    const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
+    const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
+    const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
 
-  // Handle a single round of PvP
-  const playPvPRound = (action: 'attack' | 'shield') => {
-    if (!pvpDuel) return;
+    const cWeapon = activeWeapon ? activeWeapon.name : '';
+    const cShieldItem = activeShield ? activeShield.name : '';
+    const cArmor = activeArmor ? activeArmor.name : '';
 
-    const roundLogs: string[] = [];
+    const newSession = {
+      status: 'pending',
+      challengerId: auth.currentUser!.uid,
+      challengerName: progress.username || 'Guardián',
+      challengerHp: 150 + progress.phase * 30,
+      challengerMaxHp: 150 + progress.phase * 30,
+      challengerShield: 80,
+      challengerMaxShield: 80,
+      challengerWeapon: cWeapon,
+      challengerShieldItem: cShieldItem,
+      challengerArmor: cArmor,
+      challengerLoot: tempBag,
 
-    // ====== Player turn ======
-    if (action === 'attack') {
-      const rawDmg = 22 + Math.floor(Math.random() * 12) + progress.phase * 3;
-      let dmgAbsorbed = 0;
-      let finalHpDmg = rawDmg;
+      defenderId: rival.id,
+      defenderName: rival.username,
+      defenderHp: 150 + rival.phase * 30,
+      defenderMaxHp: 150 + rival.phase * 30,
+      defenderShield: 80,
+      defenderMaxShield: 80,
+      defenderWeapon: '',
+      defenderShieldItem: '',
+      defenderArmor: '',
 
-      let nextRivalShield = pvpDuel.rivalShield;
-      if (nextRivalShield > 0) {
-        if (nextRivalShield >= rawDmg) {
-          nextRivalShield -= rawDmg;
-          dmgAbsorbed = rawDmg;
-          finalHpDmg = 0;
-        } else {
-          dmgAbsorbed = nextRivalShield;
-          finalHpDmg = rawDmg - nextRivalShield;
-          nextRivalShield = 0;
-        }
-      }
+      logs: [`⚔️ ¡DUELO DE SABLES SOLICITADO! Has retado a ${rival.username} a un duelo territorial de sables en la bruma.`],
+      createdAt: new Date().toISOString()
+    };
 
-      const nextRivalHp = Math.max(0, pvpDuel.rivalHp - finalHpDmg);
-      roundLogs.push(`⚔️ Blandes tu sable infligiendo ${rawDmg} de daño total (${dmgAbsorbed > 0 ? `${dmgAbsorbed} absorbido por escudo, ` : ''}${finalHpDmg} restado de HP!).`);
-
-      if (nextRivalHp <= 0) {
-        // Victory! Steal their temp gold + massive drops
-        const goldStolen = Math.floor(Math.random() * 120) + 80;
-        onSaveProgress({
-          ...progress,
-          gold: progress.gold + goldStolen,
-          exp: progress.exp + 120
-        });
-
-        roundLogs.push(`🏆 ¡VICTORIA EXQUISITA! Has doblegado a ${pvpDuel.rivalName}. Le has despojado del mineral y ganado +${goldStolen}g de loot territorial.`);
-        setPvpDuel(prev => prev ? {
-          ...prev,
-          rivalHp: 0,
-          rivalShield: 0,
-          logs: [...prev.logs, ...roundLogs]
-        } : null);
-
-        setTimeout(() => {
-          setPvpDuel(null);
-        }, 4000);
-        return;
-      }
-
-      // ====== Enemy/Rival turn response ======
-      const rivalRawDmg = 18 + Math.floor(Math.random() * 10);
-      let pShieldAbs = 0;
-      let pFinalDmg = rivalRawDmg;
-
-      let nextPlayerShield = pvpDuel.playerShield;
-      if (nextPlayerShield > 0) {
-        if (nextPlayerShield >= rivalRawDmg) {
-          nextPlayerShield -= rivalRawDmg;
-          pShieldAbs = rivalRawDmg;
-          pFinalDmg = 0;
-        } else {
-          pShieldAbs = nextPlayerShield;
-          pFinalDmg = rivalRawDmg - nextPlayerShield;
-          nextPlayerShield = 0;
-        }
-      }
-
-      const nextPlayerHp = Math.max(0, pvpDuel.playerHp - pFinalDmg);
-      roundLogs.push(`🌋 El rival ${pvpDuel.rivalName} responde ferozmente haciéndote ${rivalRawDmg} de daño (${pShieldAbs > 0 ? `${pShieldAbs} amortiguado por tu barrera` : ''}).`);
-
-      if (nextPlayerHp <= 0) {
-        // Lose! Clear cargo
-        setTempBag({
-          wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
-          stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
-          metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
-          essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
-        });
-        roundLogs.push(`💀 HAS SIDO DERROTADO... Escapas herido a tu cabaña y pierdes toda la carga de materiales que llevabas en la mochila.`);
-        
-        setPvpDuel(prev => prev ? {
-          ...prev,
-          playerHp: 0,
-          playerShield: 0,
-          logs: [...prev.logs, ...roundLogs]
-        } : null);
-
-        setTimeout(() => {
-          setPvpDuel(null);
-          setCurrentMap('cabin'); // teleport back to safe cabin!
-        }, 4500);
-        return;
-      }
-
-      setPvpDuel(prev => prev ? {
-        ...prev,
-        rivalHp: nextRivalHp,
-        rivalShield: nextRivalShield,
-        playerHp: nextPlayerHp,
-        playerShield: nextPlayerShield,
-        logs: [...prev.logs, ...roundLogs]
-      } : null);
-
-    } else {
-      // Shield Regen Defense
-      const regenera = 25 + progress.phase * 4;
-      const nextShield = Math.min(pvpDuel.playerMaxShield, pvpDuel.playerShield + regenera);
-      roundLogs.push(`🛡️ Te asguaras restaurando +${regenera} de Escudo Rúnico.`);
-
-      // Rival counter
-      const rivalRawDmg = 15 + Math.floor(Math.random() * 8);
-      let pShieldAbs = 0;
-      let pFinalDmg = rivalRawDmg;
-
-      let nextPlayerShield = nextShield;
-      if (nextPlayerShield > 0) {
-        if (nextPlayerShield >= rivalRawDmg) {
-          nextPlayerShield -= rivalRawDmg;
-          pShieldAbs = rivalRawDmg;
-          pFinalDmg = 0;
-        } else {
-          pShieldAbs = nextPlayerShield;
-          pFinalDmg = rivalRawDmg - nextPlayerShield;
-          nextPlayerShield = 0;
-        }
-      }
-
-      const nextPlayerHp = Math.max(0, pvpDuel.playerHp - pFinalDmg);
-      roundLogs.push(`🌋 El rival ${pvpDuel.rivalName} arremete con ráfaga por ${rivalRawDmg} de potencia.`);
-
-      setPvpDuel(prev => prev ? {
-        ...prev,
-        playerHp: nextPlayerHp,
-        playerShield: nextPlayerShield,
-        logs: [...prev.logs, ...roundLogs]
-      } : null);
+    try {
+      const pvpRef = collection(db, 'pvp_duels');
+      const docRef = await addDoc(pvpRef, newSession);
+      setActiveDuelId(docRef.id);
+      triggerNotification("⚔️ Solicitud de duelo enviada. Esperando aceptación...");
+    } catch (err) {
+      console.error("Error creating duel challenge:", err);
+      triggerNotification("⚠️ Error al crear desafío de duelo.");
     }
   };
 
+  const handleAcceptDuel = async () => {
+    if (!pendingDuelInvite) return;
+    
+    const docRef = doc(db, 'pvp_duels', pendingDuelInvite.id);
+    const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
+    const shields = progress.craftedItems.filter(item => item.subType === 'shield');
+    const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+
+    const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
+    const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
+    const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+
+    const dWeapon = activeWeapon ? activeWeapon.name : '';
+    const dShieldItem = activeShield ? activeShield.name : '';
+    const dArmor = activeArmor ? activeArmor.name : '';
+
+    try {
+      await updateDoc(docRef, {
+        status: 'active',
+        defenderWeapon: dWeapon,
+        defenderShieldItem: dShieldItem,
+        defenderArmor: dArmor,
+        defenderLoot: tempBag,
+        logs: arrayUnion(`⚔️ ${progress.username || 'Defender'} ha aceptado el duelo. ¡Que comience el combate!`)
+      });
+      setActiveDuelId(pendingDuelInvite.id);
+      setPendingDuelInvite(null);
+    } catch (err) {
+      console.error("Error accepting duel:", err);
+    }
+  };
+
+  const handleDeclineDuel = async () => {
+    if (!pendingDuelInvite) return;
+    const docRef = doc(db, 'pvp_duels', pendingDuelInvite.id);
+    try {
+      await updateDoc(docRef, {
+        status: 'rejected'
+      });
+      setPendingDuelInvite(null);
+    } catch (err) {
+      console.error("Error declining duel:", err);
+    }
+  };
+
+  const resolveDuelRound = async (docRef: any, data: any) => {
+    const cId = data.challengerId;
+    const dId = data.defenderId;
+    let cHp = data.challengerHp;
+    let dHp = data.defenderHp;
+    let cShield = data.challengerShield;
+    let dShield = data.defenderShield;
+    
+    const cAction = data.challengerAction;
+    const dAction = data.defenderAction;
+
+    const cWeapon = data.challengerWeapon || '';
+    const cShieldItem = data.challengerShieldItem || '';
+    const cArmor = data.challengerArmor || '';
+
+    const dWeapon = data.defenderWeapon || '';
+    const dShieldItem = data.defenderShieldItem || '';
+    const dArmor = data.defenderArmor || '';
+
+    const logs: string[] = [...(data.logs || [])];
+    logs.push(`--- RONDA RESOLUCIÓN ---`);
+
+    let cBurn = data.challengerBurnTicks || 0;
+    let dBurn = data.defenderBurnTicks || 0;
+    let cMit = data.challengerMitigation || false;
+    let dMit = data.defenderMitigation || false;
+
+    // Challenger Action Resolution
+    let cDmg = 0;
+    let cShieldRegen = 0;
+    let cHeal = 0;
+    let cLog = '';
+
+    if (cAction === 'attack') {
+      if (cWeapon.includes('Sable del Alba')) {
+        cDmg = 110;
+        dBurn = 2;
+        cLog = `⚔️ ${data.challengerName} desata [IRA SOLAR] con Sable del Alba Legendario (110 daño + 2 turnos de quemadura).`;
+      } else if (cWeapon.includes('Mandoble')) {
+        cDmg = 70;
+        dShield = Math.max(0, dShield - 15);
+        cLog = `⚔️ ${data.challengerName} ejecuta [TAJO SOMBRÍO] con Mandoble de Bruma Astral (70 daño + drena 15 de escudo).`;
+      } else {
+        cDmg = 40;
+        cLog = `⚔️ ${data.challengerName} ataca con [CORTE RÁPIDO] (40 daño).`;
+      }
+    } else if (cAction === 'shield') {
+      if (cShieldItem.includes('Estelares')) {
+        cShieldRegen = 50;
+        cLog = `🛡️ ${data.challengerName} activa [BARRERA RÚNICA] (+50 Escudo).`;
+      } else {
+        cShieldRegen = 30;
+        cLog = `🛡️ ${data.challengerName} levanta [GUARDIA SIMPLE] (+30 Escudo).`;
+      }
+    } else if (cAction === 'armor') {
+      if (cArmor.includes('Escamas')) {
+        cMit = true;
+        cHeal = 45;
+        cLog = `🛡️ ${data.challengerName} endurece su [ESCAMA SAGRADA] (+45 HP, mitigará 50% de daño en este turno).`;
+      } else {
+        cHeal = 25;
+        cLog = `🛡️ ${data.challengerName} se refugia con [REFUGIO COMÚN] (+25 HP).`;
+      }
+    }
+
+    // Defender Action Resolution
+    let dDmg = 0;
+    let dShieldRegen = 0;
+    let dHeal = 0;
+    let dLog = '';
+
+    if (dAction === 'attack') {
+      if (dWeapon.includes('Sable del Alba')) {
+        dDmg = 110;
+        cBurn = 2;
+        dLog = `⚔️ ${data.defenderName} desata [IRA SOLAR] con Sable del Alba Legendario (110 daño + 2 turnos de quemadura).`;
+      } else if (dWeapon.includes('Mandoble')) {
+        dDmg = 70;
+        cShield = Math.max(0, cShield - 15);
+        dLog = `⚔️ ${data.defenderName} ejecuta [TAJO SOMBRÍO] con Mandoble de Bruma Astral (70 daño + drena 15 de escudo).`;
+      } else {
+        dDmg = 40;
+        dLog = `⚔️ ${data.defenderName} ataca con [CORTE RÁPIDO] (40 daño).`;
+      }
+    } else if (dAction === 'shield') {
+      if (dShieldItem.includes('Estelares')) {
+        dShieldRegen = 50;
+        dLog = `🛡️ ${data.defenderName} activa [BARRERA RÚNICA] (+50 Escudo).`;
+      } else {
+        dShieldRegen = 30;
+        dLog = `🛡️ ${data.defenderName} levanta [GUARDIA SIMPLE] (+30 Escudo).`;
+      }
+    } else if (dAction === 'armor') {
+      if (dArmor.includes('Escamas')) {
+        dMit = true;
+        dHeal = 45;
+        dLog = `🛡️ ${data.defenderName} endurece su [ESCAMA SAGRADA] (+45 HP, mitigará 50% de daño en este turno).`;
+      } else {
+        dHeal = 25;
+        dLog = `🛡️ ${data.defenderName} se refugia con [REFUGIO COMÚN] (+25 HP).`;
+      }
+    }
+
+    logs.push(cLog);
+    logs.push(dLog);
+
+    // Apply heals
+    cHp = Math.min(data.challengerMaxHp, cHp + cHeal);
+    dHp = Math.min(data.defenderMaxHp, dHp + dHeal);
+
+    // Apply shields
+    cShield = Math.min(data.challengerMaxShield, cShield + cShieldRegen);
+    dShield = Math.min(data.defenderMaxShield, dShield + dShieldRegen);
+
+    // Apply damage to Defender
+    if (cDmg > 0) {
+      let finalDmg = cDmg;
+      if (dMit) finalDmg = Math.floor(finalDmg * 0.5);
+      let absorbed = 0;
+      if (dShield > 0) {
+        if (dShield >= finalDmg) {
+          dShield -= finalDmg;
+          absorbed = finalDmg;
+          finalDmg = 0;
+        } else {
+          absorbed = dShield;
+          finalDmg -= dShield;
+          dShield = 0;
+        }
+      }
+      dHp = Math.max(0, dHp - finalDmg);
+      logs.push(`💥 ${data.defenderName} recibe ${cDmg} daño total (${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP).`);
+    }
+
+    // Apply damage to Challenger
+    if (dDmg > 0) {
+      let finalDmg = dDmg;
+      if (cMit) finalDmg = Math.floor(finalDmg * 0.5);
+      let absorbed = 0;
+      if (cShield > 0) {
+        if (cShield >= finalDmg) {
+          cShield -= finalDmg;
+          absorbed = finalDmg;
+          finalDmg = 0;
+        } else {
+          absorbed = cShield;
+          finalDmg -= cShield;
+          cShield = 0;
+        }
+      }
+      cHp = Math.max(0, cHp - finalDmg);
+      logs.push(`💥 ${data.challengerName} recibe ${dDmg} daño total (${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP).`);
+    }
+
+    // Apply burn damage
+    if (cBurn > 0) {
+      cHp = Math.max(0, cHp - 15);
+      cBurn--;
+      logs.push(`🔥 Quemadura solar inflige 15 de daño continuo a ${data.challengerName}. Ticks restantes: ${cBurn}`);
+    }
+    if (dBurn > 0) {
+      dHp = Math.max(0, dHp - 15);
+      dBurn--;
+      logs.push(`🔥 Quemadura solar inflige 15 de daño continuo a ${data.defenderName}. Ticks restantes: ${dBurn}`);
+    }
+
+    let status = 'active';
+    let winnerId = '';
+    if (cHp <= 0 && dHp <= 0) {
+      status = 'finished';
+      winnerId = 'draw';
+      logs.push("💀 Duelo finalizado. Ambos combatientes han colapsado en la bruma.");
+    } else if (cHp <= 0) {
+      status = 'finished';
+      winnerId = dId;
+      logs.push(`🏆 ¡Combate terminado! ${data.defenderName} derrota a ${data.challengerName}.`);
+    } else if (dHp <= 0) {
+      status = 'finished';
+      winnerId = cId;
+      logs.push(`🏆 ¡Combate terminado! ${data.challengerName} derrota a ${data.defenderName}.`);
+    }
+
+    await updateDoc(docRef, {
+      challengerHp: cHp,
+      defenderHp: dHp,
+      challengerShield: cShield,
+      defenderShield: dShield,
+      challengerAction: '',
+      defenderAction: '',
+      challengerBurnTicks: cBurn,
+      defenderBurnTicks: dBurn,
+      challengerMitigation: false,
+      defenderMitigation: false,
+      logs,
+      status,
+      winnerId
+    });
+  };
+
+  const playPvPRound = async (action: 'attack' | 'shield' | 'armor') => {
+    if (!activeDuelId) return;
+
+    const docRef = doc(db, 'pvp_duels', activeDuelId);
+    try {
+      const docSnap = await getDoc(docRef);
+      if (!docSnap.exists()) return;
+      const data = docSnap.data();
+      const isChallenger = data.challengerId === auth.currentUser?.uid;
+
+      if (isChallenger && data.challengerAction) {
+        triggerNotification("⏳ Esperando acción del oponente...");
+        return;
+      }
+      if (!isChallenger && data.defenderAction) {
+        triggerNotification("⏳ Esperando acción del oponente...");
+        return;
+      }
+
+      if (isChallenger) {
+        await updateDoc(docRef, { challengerAction: action });
+      } else {
+        await updateDoc(docRef, { defenderAction: action });
+      }
+
+      // Check if both actions are present now
+      const freshSnap = await getDoc(docRef);
+      const freshData = freshSnap.data()!;
+      if (freshData.challengerAction && freshData.defenderAction) {
+        // Deterministic single resolver based on lexicographical uid ordering
+        const rivalId = isChallenger ? freshData.defenderId : freshData.challengerId;
+        const shouldResolve = auth.currentUser!.uid < rivalId;
+        if (shouldResolve) {
+          await resolveDuelRound(docRef, freshData);
+        }
+      } else {
+        triggerNotification("⏳ Acción registrada. Esperando a tu rival...");
+      }
+    } catch (err) {
+      console.error("Error playing PvP round:", err);
+    }
+  };
+
+  const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
+  const shields = progress.craftedItems.filter(item => item.subType === 'shield');
+  const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+
+  const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
+  const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
+  const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+
+  const activeWeaponSkillName = activeWeapon?.name.includes('Sable del Alba') ? 'Ira Solar' : activeWeapon?.name.includes('Mandoble') ? 'Tajo Sombrío' : 'Corte Rápido';
+  const activeShieldSkillName = activeShield?.name.includes('Estelares') ? 'Barrera Rúnica' : 'Guardia Simple';
+  const activeArmorSkillName = activeArmor?.name.includes('Escamas') ? 'Escama Sagrada' : 'Refugio Común';
+
+  const distanceToBeacon = currentMap === 'map3' ? Math.sqrt(Math.pow(playerX, 2) + Math.pow(playerZ - (-10), 2)) : 999;
+  const isNearBeacon = distanceToBeacon <= 5.0;
 
   return (
     <div className="w-full relative bg-[#090a14] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" style={{ height: '780px' }}>
@@ -1081,6 +1614,29 @@ export function FirstPersonWorld({
 
         {/* Global actions and PVP Toggles */}
         <div className="flex items-center gap-3">
+          {/* Summon/Dismiss Nitz Companion (Palworld style) */}
+          {currentMap !== 'cabin' && (
+            <button
+              onClick={() => {
+                const nextSummoned = !progress.companionSummoned;
+                onSaveProgress({
+                  ...progress,
+                  companionSummoned: nextSummoned
+                });
+                triggerNotification(nextSummoned ? "🐾 ¡Nitz invocado! Te seguirá y te ayudará a recolectar recursos." : "🐾 Nitz regresó a descansar en tu cabaña.");
+              }}
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 uppercase ${
+                progress.companionSummoned 
+                  ? 'bg-amber-600 border border-amber-500 text-white animate-pulse' 
+                  : 'bg-black/50 border border-white/10 text-gray-400 hover:text-white'
+              }`}
+              title={progress.companionSummoned ? 'Desinvocar a tu compañero Nitz' : 'Invocar a tu compañero Nitz para ayudarte a recolectar'}
+            >
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>{progress.companionSummoned ? 'Nitz Invocado' : 'Invocar Nitz'}</span>
+            </button>
+          )}
+
           {currentMap === 'map3' && (
             <button
               onClick={() => {
@@ -1100,14 +1656,20 @@ export function FirstPersonWorld({
 
           {/* Secure shipment button if they gathered anything */}
           {currentMap !== 'cabin' && currentMap !== 'neighborhood' && currentMap !== 'lobby' && (
-            <button
-              onClick={handleBankResourcesDirectly}
-              className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-md active:scale-95 border border-emerald-400/30"
-              title="Guardar tus recursos conseguidos en el inventario duradero"
-            >
-              <RefreshCw className="w-3.5 h-3.5" />
-              <span>Guardar Botín</span>
-            </button>
+            currentMap === 'map3' ? (
+              <span className="text-[10px] bg-red-950/40 text-red-400 border border-red-500/20 px-3 py-1.5 rounded-lg font-mono font-bold animate-pulse">
+                💀 SE REQUIERE EXTRACCIÓN EN FARO
+              </span>
+            ) : (
+              <button
+                onClick={handleBankResourcesDirectly}
+                className="bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs px-3.5 py-1.5 rounded-md flex items-center gap-1.5 transition-all shadow-md active:scale-95 border border-emerald-400/30"
+                title="Guardar tus recursos conseguidos en el inventario duradero"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Guardar Botín</span>
+              </button>
+            )
           )}
 
           {/* Active players indicator counter */}
@@ -1126,6 +1688,37 @@ export function FirstPersonWorld({
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-[#121528] border border-tertiary/40 px-5 py-2.5 rounded-full text-xs font-bold text-[#dec1ac] shadow-2xl flex items-center gap-2 animate-bounce">
             <Sparkles className="w-4 h-4 text-tertiary animate-pulse" />
             <span>{notification}</span>
+          </div>
+        )}
+
+        {/* Extraction Beacon Prompt (Arc Raiders style) */}
+        {currentMap === 'map3' && isNearBeacon && (
+          <div className="absolute bottom-24 left-1/2 -translate-x-1/2 z-30 bg-black/95 border border-yellow-500/40 p-4 rounded-xl flex flex-col items-center gap-2 shadow-2xl text-center min-w-[280px] scale-105 transition-all animate-fade-in">
+            <span className="text-[9px] text-[#dec1ac] uppercase tracking-widest font-mono font-bold animate-pulse">Punto de Extracción Activo</span>
+            <span className="text-white text-xs font-bold font-mono">Faro de Evacuación de Almas</span>
+            
+            {extractionActive ? (
+              <div className="space-y-2 w-full">
+                <span className="text-emerald-400 font-extrabold text-xs font-mono block animate-pulse">EXTRAYENDO BOTÍN EN BRUMAS: {extractionTimeLeft}s</span>
+                <div className="w-full bg-[#1e2030] h-1.5 rounded-full overflow-hidden">
+                  <div className="bg-emerald-500 h-full transition-all duration-1000" style={{ width: `${(extractionTimeLeft / 15) * 100}%` }} />
+                </div>
+                <span className="text-[8px] text-gray-500 block font-mono">¡PREPÁRATE PARA DEFENDER LA POSICIÓN!</span>
+              </div>
+            ) : (
+              <button
+                onClick={handleStartExtraction}
+                disabled={!hasItemsInTempBag()}
+                className={`font-extrabold text-xs px-5 py-2 rounded-md shadow flex items-center gap-1.5 transition-all active:scale-95 ${
+                  hasItemsInTempBag()
+                    ? 'bg-yellow-500 hover:bg-yellow-400 text-black cursor-pointer'
+                    : 'bg-white/5 text-white/20 border border-white/5 cursor-not-allowed'
+                }`}
+              >
+                <RefreshCw className="w-3.5 h-3.5 animate-spin" style={{ animationDuration: '4s' }} />
+                <span>INICIAR EXTRACCIÓN (15s)</span>
+              </button>
+            )}
           </div>
         )}
 
@@ -1330,6 +1923,7 @@ export function FirstPersonWorld({
                 <BattleArena 
                   progress={progress}
                   onSaveProgress={onSaveProgress}
+                  onDefeat={handleDefeatInArena}
                 />
               )}
 
@@ -1400,24 +1994,65 @@ export function FirstPersonWorld({
 
               {/* Controls */}
               {pvpDuel.playerHp > 0 && pvpDuel.rivalHp > 0 ? (
-                <div className="flex gap-3">
+                <div className="flex gap-2">
                   <button
                     onClick={() => playPvPRound('attack')}
-                    className="flex-1 bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs py-3 rounded-xl border border-red-400/30 transition-all flex items-center justify-center gap-1.5"
+                    className="flex-1 bg-red-600 hover:bg-red-500 text-white font-extrabold text-[10px] py-2.5 rounded-xl border border-red-400/30 transition-all flex flex-col items-center justify-center gap-1 active:scale-95"
                   >
-                    <Sword className="w-4 h-4" />
-                    <span>EMBESTIDA CON SABLE</span>
+                    <Flame className="w-4 h-4" />
+                    <span>{activeWeaponSkillName}</span>
                   </button>
                   <button
                     onClick={() => playPvPRound('shield')}
-                    className="flex-1 bg-gradient-to-r from-cyan-600 to-cyan-500 hover:from-cyan-500 text-white font-extrabold text-xs py-3 rounded-xl transition-all"
+                    className="flex-1 bg-cyan-600 hover:bg-cyan-500 text-white font-extrabold text-[10px] py-2.5 rounded-xl border border-cyan-400/30 transition-all flex flex-col items-center justify-center gap-1 active:scale-95"
                   >
-                    RESTAURAR ESCUDOS
+                    <Zap className="w-4 h-4" />
+                    <span>{activeShieldSkillName}</span>
+                  </button>
+                  <button
+                    onClick={() => playPvPRound('armor')}
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-[10px] py-2.5 rounded-xl border border-emerald-400/30 transition-all flex flex-col items-center justify-center gap-1 active:scale-95"
+                  >
+                    <Shield className="w-4 h-4" />
+                    <span>{activeArmorSkillName}</span>
                   </button>
                 </div>
               ) : (
                 <div className="text-center text-xs text-gray-500 italic">Terminando confrontación...</div>
               )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* PENDING DUEL INVITE POPUP */}
+      <AnimatePresence>
+        {pendingDuelInvite && (
+          <motion.div
+            initial={{ opacity: 0, y: 50 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 50 }}
+            className="absolute bottom-24 left-6 z-50 bg-[#16060c]/95 border-2 border-red-500/40 p-4 rounded-xl max-w-sm space-y-3 shadow-2xl text-xs backdrop-blur pointer-events-auto"
+          >
+            <div className="flex items-center gap-1.5 text-red-400 font-bold uppercase tracking-wider">
+              <Skull className="w-4 h-4 animate-pulse" />
+              <span>Desafío de Bruma Hostil</span>
+            </div>
+            <p className="text-gray-300">
+              ⚔️ El guardián <strong>{pendingDuelInvite.challengerName}</strong> te ha retado a un duelo a muerte de sables. El perdedor perderá toda su mochila temporal.
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={handleAcceptDuel}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white py-1.5 rounded font-bold transition-all"
+              >
+                Aceptar
+              </button>
+              <button
+                onClick={handleDeclineDuel}
+                className="flex-1 bg-red-600/20 hover:bg-red-600/30 text-red-300 border border-red-500/30 py-1.5 rounded font-bold transition-all"
+              >
+                Rechazar
+              </button>
             </div>
           </motion.div>
         )}
