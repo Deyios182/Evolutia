@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Evolutia",
+  "description": "Prototype of Evolutia: Crónicas del Origen, featuring a dynamically reactive 3D Nitz, emotional vector systems, evolution phases, social lobby, private home care sandbox, and battle preview arena.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

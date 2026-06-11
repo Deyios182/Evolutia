@@ -1,0 +1,47 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile and Progress",
+      "description": "Represents a player profile, including game state, inventory, and mistic customization.",
+      "type": "object",
+      "properties": {
+        "isLoggedIn": { "type": "boolean" },
+        "username": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "gold": { "type": "integer" },
+        "exp": { "type": "integer" },
+        "phase": { "type": "integer" },
+        "interactionCount": { "type": "integer" },
+        "status": { "type": "string", "enum": ["online", "idle", "in_battle"] },
+        "dominantEmotion": { "type": "string" },
+        "lastActive": { "type": "string" }
+      },
+      "required": ["username"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "Represents a message sent in the cohabiting multiplayer sanctuary lobby.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "sender": { "type": "string" },
+        "avatarUrl": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isNitz": { "type": "boolean" },
+        "userId": { "type": "string" }
+      },
+      "required": ["sender", "text", "userId"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "Stores user profiles keyed by unique Auth UID."
+    },
+    "/chat/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Global multi-user chat messages."
+    }
+  }
+}
