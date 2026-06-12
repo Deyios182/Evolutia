@@ -55,6 +55,8 @@ export interface PlayerProgress {
   // Albion RPG & Neighborhood system extensions
   inventory: GatheringInventory;
   craftedItems: CraftableItem[];
+  stashInventory?: GatheringInventory;
+  stashItems?: CraftableItem[];
   houseDecorations: { itemId: string; slot: number }[]; 
   equippedWeaponId?: string;
   equippedShieldId?: string;
@@ -62,6 +64,21 @@ export interface PlayerProgress {
   companionSummoned?: boolean;
   plotLevel?: number;
   authorizedBuilders?: string[];
+}
+
+export interface MarketplaceItem {
+  id: string;
+  sellerId: string;
+  sellerName: string;
+  itemType: 'material' | 'crafted';
+  // For materials:
+  materialCategory?: 'wood' | 'stone' | 'metal' | 'essence';
+  materialRarity?: 'common' | 'rare' | 'epic' | 'legendary';
+  quantity?: number;
+  // For crafted items:
+  craftedItem?: CraftableItem;
+  priceGold: number;
+  listedAt: string;
 }
 
 export interface LobbyPlayer {

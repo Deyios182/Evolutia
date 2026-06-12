@@ -243,10 +243,9 @@ import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, array
 
 // Subcomponents to render as immersive overlays
 import { MyHome } from './MyHome';
-import { Lobby } from './Lobby';
-import { BattleArena } from './BattleArena';
-import { Minigame } from './Minigame';
 import { Codex } from './Codex';
+import { BattleArena } from './BattleArena';
+import { Marketplace } from './Marketplace';
 import { Crafting } from './Crafting';
 import { Vecindario } from './Vecindario';
 
@@ -281,7 +280,7 @@ interface InteractiveNode3D {
   name: string;
   x: number;
   z: number;
-  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise';
+  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash';
   rarity?: 'common' | 'rare' | 'epic' | 'legendary';
   clicksRequired?: number;
   clicksCurrent?: number;
@@ -304,7 +303,7 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating'>('none');
+  const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash'>('none');
 
   // Multi-player states
   const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([]);
@@ -490,16 +489,39 @@ export function FirstPersonWorld({
   const companionRingRef = useRef<THREE.Group | THREE.Mesh | null>(null);
   const strikeNodeRef = useRef<InteractiveNode3D | null>(null);
 
+  // Action RPG States
+  const [showQuickInventory, setShowQuickInventory] = useState<boolean>(false);
+  const isDodgingRef = useRef<boolean>(false);
+
   // Setup initial key listeners
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
+      
+      if (k === 'tab') {
+        e.preventDefault();
+        if (activeOverlayRef.current === 'none') {
+          setShowQuickInventory(prev => !prev);
+        }
+        return;
+      }
+
       keysDownRef.current[k] = true;
       keysRef.current[k] = true;
       setKeys({ ...keysDownRef.current });
 
-      // If user presses Control or Alt, release pointer lock
-      if (e.key === 'Control' || e.key === 'Alt') {
+      // Action RPG Dodge (Alt)
+      if (k === 'alt') {
+        e.preventDefault();
+        if (!isDodgingRef.current && activeOverlayRef.current === 'none') {
+           isDodgingRef.current = true;
+           // I-frames / Dash window
+           setTimeout(() => { isDodgingRef.current = false; }, 500);
+        }
+      }
+
+      // If user presses Control, release pointer lock
+      if (e.key === 'Control') {
         if (document.pointerLockElement) {
           document.exitPointerLock();
         }
@@ -666,6 +688,7 @@ export function FirstPersonWorld({
     let newNodes: InteractiveNode3D[] = [];
     if (currentMap === 'cabin') {
       newNodes = [
+        { id: 'stash', name: 'Baúl Almacén Fuerte', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro (Banco)' },
         { id: 'synth', name: 'Sintonizador Orgánico Estelar', x: -4, z: -3, type: 'synth', label: '🎼 Sostén Sintonía (Minijuego)' },
         { id: 'anvil', name: 'Yunque Forjador Astral', x: 4, z: -3, type: 'anvil', label: '🔨 Abrir Forja de Equipamiento' },
         { id: 'bookshelf', name: 'Gran Librera Astral (Códice)', x: -5, z: 2, type: 'bookshelf', label: '📖 Códice de Arquetipos' },
@@ -687,6 +710,7 @@ export function FirstPersonWorld({
       setPlayerZ(7);
     } else if (currentMap === 'lobby') {
       newNodes = [
+        { id: 'marketplace', name: 'Gran Mercado Global', x: 8, z: 0, type: 'marketplace', label: '⚖️ Acceder al Mercado Vivo (Comprar/Vender)' },
         { id: 'gate_vecindario', name: 'Paso de Regreso a Vecindarios', x: 0, z: 12, type: 'door_vecindario', label: '🏘️ Regresar al Vecindario' },
         { id: 'gate_world1', name: 'Portal al Mapa 1: Bosque Seguro', x: -12, z: -8, type: 'door_map1', label: '🌲 Viajar al Bosque Seguro (Fácil/Seguro)' },
         { id: 'gate_world2', name: 'Portal al Mapa 2: Cantera de Caos', x: 12, z: -8, type: 'door_map2', label: '💎 Viajar al Cantera Estelar (Medio/Materiales)' },
@@ -1852,6 +1876,10 @@ export function FirstPersonWorld({
     // Router
     if (nearNode.type === 'synth') {
       setActiveOverlay('syntonia');
+    } else if (nearNode.type === 'marketplace') {
+      setActiveOverlay('marketplace');
+    } else if (nearNode.type === 'stash') {
+      setActiveOverlay('stash');
     } else if (nearNode.type === 'anvil') {
       setActiveOverlay('crafting');
     } else if (nearNode.type === 'bookshelf') {
@@ -2819,6 +2847,8 @@ export function FirstPersonWorld({
                   {activeOverlay === 'codex' && '📖 Gran Compendio y Códice de Arquetipos'}
                   {activeOverlay === 'arena' && '⚔️ Arena de Combate vs Nitz Korrumpido'}
                   {activeOverlay === 'interactive_pet_chat' && '🐾 Panel de Cuidados & Comunicación Holística de Nitz'}
+                  {activeOverlay === 'marketplace' && '⚖️ Gran Mercado Astral Global'}
+                  {activeOverlay === 'stash' && '📦 Baúl de Almacenamiento Fuerte'}
                 </span>
               </div>
               <button
@@ -2868,6 +2898,29 @@ export function FirstPersonWorld({
                   unlockedArchetypes={progress.unlockedArchetypes}
                   currentDominant={currentDominant.name}
                 />
+              )}
+
+              {activeOverlay === 'marketplace' && (
+                <Marketplace 
+                  progress={progress}
+                  onSaveProgress={onSaveProgress}
+                  onClose={() => setActiveOverlay('none')}
+                />
+              )}
+
+              {activeOverlay === 'stash' && (
+                <div className="text-center py-20 px-6 space-y-6">
+                  <div className="text-6xl animate-bounce">📦</div>
+                  <h2 className="text-2xl font-bold font-headline-md text-amber-500 uppercase">Cofre de Almacén Seguro</h2>
+                  <p className="text-gray-400 max-w-xl mx-auto text-sm leading-relaxed">
+                    Los recursos y objetos depositados en este almacén no se perderán si mueres en las Zonas de Bruma de Sangre (PvP). 
+                    <br/><br/>
+                    <em>La interfaz completa de transferencia táctica (Mochila ↔ Almacén) está en desarrollo para la siguiente fase.</em>
+                  </p>
+                  <button onClick={() => setActiveOverlay('none')} className="bg-amber-600/20 hover:bg-amber-500/40 border border-amber-500/50 px-8 py-3 rounded-xl text-amber-400 font-bold transition-all shadow-lg active:scale-95">
+                    Aceptar y Cerrar
+                  </button>
+                </div>
               )}
 
               {activeOverlay === 'arena' && (
@@ -3004,6 +3057,61 @@ export function FirstPersonWorld({
               >
                 Rechazar
               </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* QUICK INVENTORY TACTICAL HUD */}
+      <AnimatePresence>
+        {showQuickInventory && activeOverlay === 'none' && (
+          <motion.div
+            initial={{ opacity: 0, x: -50 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -50 }}
+            className="absolute left-6 top-24 z-40 bg-[#0d0f1a]/90 border border-white/20 p-5 rounded-xl shadow-2xl backdrop-blur-md min-w-[280px] pointer-events-auto"
+          >
+            <h3 className="text-white font-bold tracking-widest text-sm mb-4 border-b border-white/10 pb-2 uppercase flex items-center gap-2">
+              <span className="text-emerald-400">Tactical</span> Inventory
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-[10px] text-tertiary mb-1.5 font-mono">Equipo Actual</h4>
+                <div className="flex gap-2">
+                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Arma Equipada">
+                    {progress.equippedWeaponId ? '⚔️' : '✋'}
+                  </div>
+                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Escudo Equipado">
+                    {progress.equippedShieldId ? '🛡️' : '❌'}
+                  </div>
+                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Armadura Equipada">
+                    {progress.equippedArmorId ? '🎽' : '👕'}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h4 className="text-[10px] text-tertiary mb-1.5 font-mono">Loot Sesión (Temporal)</h4>
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div className="bg-amber-900/40 p-2 rounded border border-amber-500/20 text-gray-200">
+                    🌲 Madera: {tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary}
+                  </div>
+                  <div className="bg-slate-800/60 p-2 rounded border border-slate-500/20 text-gray-200">
+                    🪨 Piedra: {tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary}
+                  </div>
+                  <div className="bg-gray-700/60 p-2 rounded border border-gray-400/20 text-gray-200">
+                    ⚙️ Metal: {tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary}
+                  </div>
+                  <div className="bg-fuchsia-900/40 p-2 rounded border border-fuchsia-500/20 text-gray-200">
+                    🔮 Esencia: {tempBag.essence.common + tempBag.essence.rare + tempBag.essence.epic + tempBag.essence.legendary}
+                  </div>
+                </div>
+              </div>
+
+              <div className="text-[9px] text-gray-500 font-mono text-center mt-2 pt-2 border-t border-white/5">
+                Presiona TAB para cerrar
+              </div>
             </div>
           </motion.div>
         )}

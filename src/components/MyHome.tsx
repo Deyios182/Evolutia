@@ -126,12 +126,11 @@ export const MyHome: React.FC<MyHomeProps> = ({
     ]);
   };
 
-  const handleSendMessage = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!inputText.trim() || isTyping) return;
+  const [isListening, setIsListening] = useState(false);
+  const recognitionRef = useRef<any>(null);
 
-    const userText = inputText;
-    setInputText('');
+  const submitMessageText = async (userText: string) => {
+    if (!userText.trim() || isTyping) return;
 
     const userMsg: ChatMessage = {
       id: `u_${Date.now()}`,
@@ -146,17 +145,29 @@ export const MyHome: React.FC<MyHomeProps> = ({
 
     try {
       const badWords = ['tonto', 'mierda', 'estúpido', 'idiota', 'maldito', 'puta', 'cabrón', 'imbécil', 'feo'];
-      const isInsult = badWords.some(w => userText.toLowerCase().includes(w));
+      const loveWords = ['lindo', 'hermoso', 'buen chico', 'te quiero', 'genial', 'amigo', 'precioso'];
       
-      let extraIraText = '';
+      const isInsult = badWords.some(w => userText.toLowerCase().includes(w));
+      const isLoving = loveWords.some(w => userText.toLowerCase().includes(w));
+      
+      let extraText = '';
       if (isInsult) {
         onUpdateEmotions(prev => ({
           ...prev,
-          Ira: Math.min(100, prev.Ira + 15)
+          Ira: Math.min(100, prev.Ira + 15),
+          Tristeza: Math.min(100, prev.Tristeza + 5)
         }));
-        extraIraText = "¡No me hables así! Siento cómo la ira me consume por dentro.";
+        extraText = "¡No me hables así! Siento cómo la ira me consume por dentro.";
+      } else if (isLoving) {
+        onUpdateEmotions(prev => ({
+          ...prev,
+          Amor: Math.min(100, prev.Amor + 15),
+          Alegría: Math.min(100, prev.Alegría + 10)
+        }));
+        extraText = "*brilla intensamente* ¡Siento mucho amor! Gracias hacedor.";
       }
 
+      // We send it to our mock API
       const response = await fetch('/api/nitz/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -174,7 +185,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
       }
 
       const data = await response.json();
-      const textToSpeak = isInsult ? extraIraText : (data.text || '*emite destellos indescifrables*');
+      const textToSpeak = (isInsult || isLoving) ? extraText : (data.text || '*emite destellos indescifrables*');
 
       const newResponseMsg: ChatMessage = {
         id: `n_${Date.now()}`,
@@ -199,15 +210,66 @@ export const MyHome: React.FC<MyHomeProps> = ({
           id: `n_err_${Date.now()}`,
           sender: playerProgress.avatar.name || 'Nitz de Origen',
           avatarUrl: '',
-          text: '*se inclina un poco tímido, brillando tenuemente* La resonancia del bosque es inestable justo ahora... Siento tus buenas intenciones, pero necesito alimentarme de tónicos o caricias.',
+          text: '*se inclina un poco tímido, brillando tenuemente* La resonancia del bosque es inestable justo ahora... Siento tus buenas intenciones.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isNitz: true,
         }
       ]);
+      if (isCallActive) playVoice('La resonancia del bosque es inestable justo ahora... Siento tus buenas intenciones.');
     } finally {
       setIsTyping(false);
+      // Resume listening if in call
+      if (isCallActive && recognitionRef.current) {
+        setTimeout(() => {
+          try { recognitionRef.current.start(); } catch(e){}
+        }, 1500);
+      }
     }
   };
+
+  const handleSendMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!inputText.trim() || isTyping) return;
+    const text = inputText;
+    setInputText('');
+    submitMessageText(text);
+  };
+
+  // Setup Speech Recognition
+  useEffect(() => {
+    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'es-ES';
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => setIsListening(false);
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        if (transcript.trim()) {
+           submitMessageText(transcript);
+        }
+      };
+      recognitionRef.current = recognition;
+    }
+  }, [messages, dominantName, isCallActive, isTyping]); // Rebind when dependencies change so closures have fresh state
+
+  // Auto-start mic when call becomes active
+  useEffect(() => {
+    if (isCallActive && recognitionRef.current && !isTyping && !isNitzSpeaking) {
+      try {
+        recognitionRef.current.start();
+      } catch (e) {}
+    } else if (!isCallActive && recognitionRef.current) {
+      try {
+        recognitionRef.current.stop();
+      } catch (e) {}
+      synth?.cancel();
+    }
+  }, [isCallActive, isNitzSpeaking]);
 
   return (
     <div className="w-full max-w-6xl mx-auto space-y-6 md:p-2 relative">
