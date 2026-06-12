@@ -248,6 +248,7 @@ import { BattleArena } from './BattleArena';
 import { Marketplace } from './Marketplace';
 import { Crafting } from './Crafting';
 import { Vecindario } from './Vecindario';
+import { StashUI } from './StashUI';
 
 interface FirstPersonWorldProps {
   progress: PlayerProgress;
@@ -273,6 +274,8 @@ interface OnlinePlayer {
   companionSummoned?: boolean;
   activeNitzName?: string;
   avatar?: AvatarCustomization;
+  hp?: number;
+  maxHp?: number;
 }
 
 interface InteractiveNode3D {
@@ -945,6 +948,40 @@ export function FirstPersonWorld({
     return found;
   };
 
+  const handleBankResourcesDirectly = () => {
+    setTempBag(nextInventory);
+    triggerNotification("🏦 Se han vaciado tus bolsillos temporalmente hacia la reserva permanente.");
+  };
+
+  // Player Death Listener
+  useEffect(() => {
+    if (progress.hp !== undefined && progress.hp <= 0 && currentMap === 'map3') {
+      // 1. Drop TempBag
+      // For this prototype, we'll just log it. A true robust MMO would spawn a Firestore node here.
+      console.log("Died in Map 3. Dropping tempBag:", tempBag);
+      
+      // 2. Clear TempBag locally
+      setTempBag({
+        wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
+        essence: { common: 0, rare: 0, epic: 0, legendary: 0 },
+      });
+
+      // 3. Reset HP and send back to cabin
+      onSaveProgress({
+        ...progress,
+        hp: progress.maxHp || 100
+      });
+      if (auth.currentUser) {
+        updateDoc(doc(db, 'users', auth.currentUser.uid), { hp: progress.maxHp || 100 });
+      }
+
+      setCurrentMap('cabin');
+      triggerNotification("💀 HAS MUERTO. Fuiste purgado de la Zona Roja y perdiste todo tu botín temporal.");
+    }
+  }, [progress.hp, currentMap]);
+
   const handleStartExtraction = () => {
     if (extractionActive || !hasItemsInTempBag()) return;
     
@@ -1285,26 +1322,69 @@ export function FirstPersonWorld({
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Viewport mouse dragging or pointer-lock to rotate CAMERA
-    let isDragging = false;
-    let prevMouseX = 0;
-    let prevMouseY = 0;
+    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean }[] = [];
+    let lastNitzAttack = 0;
 
     const handleMouseDown = (e: MouseEvent) => {
-      try {
-        renderer.domElement.requestPointerLock();
-      } catch (_) {}
+      const isLocked = document.pointerLockElement === renderer.domElement;
+      
+      if (!isLocked) {
+        try {
+          renderer.domElement.requestPointerLock();
+        } catch (_) {}
 
-      // Request fullscreen on user click gesture
-      try {
-        const docEl = document.documentElement;
-        if (!document.fullscreenElement) {
-          if (docEl.requestFullscreen) docEl.requestFullscreen();
-          else if ((docEl as any).webkitRequestFullscreen) (docEl as any).webkitRequestFullscreen();
-          else if ((docEl as any).mozRequestFullScreen) (docEl as any).mozRequestFullScreen();
-          else if ((docEl as any).msRequestFullscreen) (docEl as any).msRequestFullscreen();
+        // Request fullscreen on user click gesture
+        try {
+          const docEl = document.documentElement;
+          if (!document.fullscreenElement) {
+            if (docEl.requestFullscreen) docEl.requestFullscreen();
+            else if ((docEl as any).webkitRequestFullscreen) (docEl as any).webkitRequestFullscreen();
+            else if ((docEl as any).mozRequestFullScreen) (docEl as any).mozRequestFullScreen();
+            else if ((docEl as any).msRequestFullscreen) (docEl as any).msRequestFullscreen();
+          }
+        } catch (_) {}
+      } else {
+        // PLAYER ATTACK FIRE
+        if (activeOverlayRef.current === 'none') {
+          // Play swoosh sound
+          try {
+            const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+            const osc = audioCtx.createOscillator();
+            const gain = audioCtx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
+            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.15);
+            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            osc.connect(gain);
+            gain.connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + 0.2);
+          } catch (_) {}
+
+          // Spawn Player Projectile/Strike
+          const pGeo = new THREE.SphereGeometry(0.2, 8, 8);
+          const pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+          const pMesh = new THREE.Mesh(pGeo, pMat);
+          
+          pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
+          scene.add(pMesh);
+
+          // Direction from camera
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          const speed = 15.0; // Projectile speed
+
+          activeProjectiles.push({
+            mesh: pMesh,
+            vx: dir.x * speed,
+            vy: dir.y * speed,
+            vz: dir.z * speed,
+            life: 60, // frames to live
+            isNitz: false
+          });
         }
-      } catch (_) {}
+      }
 
       isDragging = true;
       prevMouseX = e.clientX;
@@ -1402,6 +1482,127 @@ export function FirstPersonWorld({
           m.rotation.z += 0.01;
         }
       });
+
+      // Update Projectiles and check Hitboxes
+      for (let i = activeProjectiles.length - 1; i >= 0; i--) {
+        const p = activeProjectiles[i];
+        p.mesh.position.x += p.vx * 0.04;
+        p.mesh.position.y += p.vy * 0.04;
+        p.mesh.position.z += p.vz * 0.04;
+        p.life -= 1;
+
+        // Simple Hitbox vs activeMeshes (Trees, Ores, Enemies)
+        let hit = false;
+        activeMeshes.forEach(nodeMesh => {
+          if (hit) return;
+          const dist = p.mesh.position.distanceTo(nodeMesh.position);
+          if (dist < 1.5 && (nodeMesh.name.startsWith('tr_') || nodeMesh.name.startsWith('or_') || nodeMesh.name === 'plot_luz')) {
+            // HIT DETECTED!
+            hit = true;
+            
+            // Visual impact effect
+            nodeMesh.scale.set(1.2, 1.2, 1.2);
+            setTimeout(() => {
+              if (nodeMesh) nodeMesh.scale.set(1, 1, 1);
+            }, 100);
+
+            // Trigger interaction via DOM event fallback to avoid breaking React scope closures
+            if (!p.isNitz) {
+              setNearNode({ id: nodeMesh.name } as any); // Force selection
+              setTimeout(() => {
+                handleInteractNearNodeRef.current(); // Mine/Hit
+              }, 50);
+            }
+          }
+        });
+
+        // PvP Hitbox vs online peers (Only in Red Zone Map 3 and if pvpEnabled)
+        if (!hit && currentMap === 'map3' && progressRef.current.pvpEnabled) {
+          peerMeshes.forEach(pm => {
+            if (hit) return;
+            const dist = p.mesh.position.distanceTo(pm.mesh.position);
+            // Hitting an enemy player!
+            if (dist < 1.8) {
+              hit = true;
+              
+              // Visual impact effect
+              pm.mesh.scale.set(1.4, 1.4, 1.4);
+              setTimeout(() => {
+                if (pm.mesh) pm.mesh.scale.set(1, 1, 1);
+              }, 120);
+
+              // Only deal damage if WE fired the projectile (we own it locally)
+              if (auth.currentUser) {
+                // Determine damage
+                const dmg = p.isNitz ? 15 + (progressRef.current.phase * 5) : 40;
+                
+                // Dispatch async damage to Firebase
+                const enemyRef = doc(db, 'users', pm.id);
+                updateDoc(enemyRef, {
+                  hp: increment(-dmg)
+                }).catch(err => console.error("Error applying PvP damage:", err));
+                
+                // Visual local feedback (optional floating text could go here)
+              }
+            }
+          });
+        }
+
+        if (hit || p.life <= 0) {
+          scene.remove(p.mesh);
+          p.mesh.geometry.dispose();
+          (p.mesh.material as THREE.Material).dispose();
+          activeProjectiles.splice(i, 1);
+        }
+      }
+
+      // Nitz Auto-cast Logic
+      if (companionMeshRef.current && (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3')) {
+        if (timer - lastNitzAttack > 3.0) { // Every 3 seconds
+          lastNitzAttack = timer;
+          
+          const pGeo = new THREE.SphereGeometry(0.3, 12, 12);
+          const pMat = new THREE.MeshBasicMaterial({ color: currentDominant.colorHex });
+          const pMesh = new THREE.Mesh(pGeo, pMat);
+          
+          pMesh.position.copy(companionMeshRef.current.position);
+          pMesh.position.y += 0.5; // from head
+          scene.add(pMesh);
+
+          // Aim at crosshair by default
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          const speed = 12.0;
+
+          // If in Map 3, find nearest enemy
+          if (currentMap === 'map3' && peerMeshes.length > 0) {
+            let nearestDist = Infinity;
+            let nearestPeer: THREE.Mesh | null = null;
+            
+            peerMeshes.forEach(pm => {
+              const d = pMesh.position.distanceTo(pm.mesh.position);
+              if (d < 15.0 && d < nearestDist) {
+                nearestDist = d;
+                nearestPeer = pm.mesh;
+              }
+            });
+
+            if (nearestPeer) {
+              // Calculate direction vector to nearest peer
+              dir.subVectors((nearestPeer as THREE.Mesh).position, pMesh.position).normalize();
+            }
+          }
+
+          activeProjectiles.push({
+            mesh: pMesh,
+            vx: dir.x * speed,
+            vy: dir.y * speed,
+            vz: dir.z * speed,
+            life: 80,
+            isNitz: true
+          });
+        }
+      }
 
       // Animate summoned companion follow behavior
       if (companionMesh) {
@@ -1711,7 +1912,8 @@ export function FirstPersonWorld({
       const baseSpeed = 4.5;
       const isRunning = keysRef.current['shift'];
       const runMultiplier = 1.8;
-      const moveSpeed = baseSpeed * (isRunning ? runMultiplier : 1.0) * dt;
+      const dodgeMultiplier = isDodgingRef.current ? 4.0 : 1.0;
+      const moveSpeed = baseSpeed * (isRunning ? runMultiplier : 1.0) * dodgeMultiplier * dt;
 
       // Read values from refs to ensure frame-rate independence and prevent effect stutters
       const angle = cameraAngleRef.current;
@@ -2909,18 +3111,11 @@ export function FirstPersonWorld({
               )}
 
               {activeOverlay === 'stash' && (
-                <div className="text-center py-20 px-6 space-y-6">
-                  <div className="text-6xl animate-bounce">📦</div>
-                  <h2 className="text-2xl font-bold font-headline-md text-amber-500 uppercase">Cofre de Almacén Seguro</h2>
-                  <p className="text-gray-400 max-w-xl mx-auto text-sm leading-relaxed">
-                    Los recursos y objetos depositados en este almacén no se perderán si mueres en las Zonas de Bruma de Sangre (PvP). 
-                    <br/><br/>
-                    <em>La interfaz completa de transferencia táctica (Mochila ↔ Almacén) está en desarrollo para la siguiente fase.</em>
-                  </p>
-                  <button onClick={() => setActiveOverlay('none')} className="bg-amber-600/20 hover:bg-amber-500/40 border border-amber-500/50 px-8 py-3 rounded-xl text-amber-400 font-bold transition-all shadow-lg active:scale-95">
-                    Aceptar y Cerrar
-                  </button>
-                </div>
+                <StashUI 
+                  progress={progress}
+                  onSaveProgress={onSaveProgress}
+                  onClose={() => setActiveOverlay('none')}
+                />
               )}
 
               {activeOverlay === 'arena' && (

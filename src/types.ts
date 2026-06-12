@@ -47,11 +47,13 @@ export interface PlayerProgress {
   avatarUrl: string;
   gold: number;
   exp: number;
+  hp: number;
+  maxHp: number;
   avatar: AvatarCustomization;
   phase: number; // 1 to 5
   emotions: EmotionVector;
   interactionCount: number;
-  unlockedArchetypes: string[]; 
+  unlockedArchetypes: string[];  
   // Albion RPG & Neighborhood system extensions
   inventory: GatheringInventory;
   craftedItems: CraftableItem[];
