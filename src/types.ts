@@ -34,11 +34,25 @@ export interface CraftableItem {
   id: string;
   name: string;
   type: 'furniture' | 'equipment';
-  subType?: 'weapon' | 'shield' | 'armor';
+  subType?: 'weapon_1h' | 'weapon_2h' | 'ranged' | 'shield' | 'grimoire' | 'head' | 'chest' | 'legs' | 'neck' | 'ring' | 'backpack';
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
-  statBonus?: string;
+  statBonus?: string; // Example: "HP+50" or "DMG+15"
+  weightCapacity?: number; // For backpacks, defines max carrying capacity
+  weight?: number; // Physical weight of the item
   placed?: boolean;
   equipped?: boolean;
+}
+
+export interface EquipmentSlots {
+  head?: CraftableItem | null;
+  chest?: CraftableItem | null;
+  legs?: CraftableItem | null;
+  neck?: CraftableItem | null;
+  ring1?: CraftableItem | null;
+  ring2?: CraftableItem | null;
+  mainHand?: CraftableItem | null;
+  offHand?: CraftableItem | null;
+  backpack?: CraftableItem | null;
 }
 
 export interface PlayerProgress {
@@ -60,12 +74,17 @@ export interface PlayerProgress {
   stashInventory?: GatheringInventory;
   stashItems?: CraftableItem[];
   houseDecorations: { itemId: string; slot: number }[]; 
-  equippedWeaponId?: string;
-  equippedShieldId?: string;
-  equippedArmorId?: string;
+  equippedWeaponId?: string; // Deprecated
+  equippedShieldId?: string; // Deprecated
+  equippedArmorId?: string; // Deprecated
+  equipment?: EquipmentSlots; // New Arc Raiders equipment system
   companionSummoned?: boolean;
   plotLevel?: number;
   authorizedBuilders?: string[];
+  // Workbenches
+  workbenchForgeLevel?: number;
+  workbenchWeaverLevel?: number;
+  workbenchEnchanterLevel?: number;
 }
 
 export interface MarketplaceItem {

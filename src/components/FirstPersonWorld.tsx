@@ -691,12 +691,14 @@ export function FirstPersonWorld({
     let newNodes: InteractiveNode3D[] = [];
     if (currentMap === 'cabin') {
       newNodes = [
-        { id: 'stash', name: 'Baúl Almacén Fuerte', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro (Banco)' },
-        { id: 'synth', name: 'Sintonizador Orgánico Estelar', x: -4, z: -3, type: 'synth', label: '🎼 Sostén Sintonía (Minijuego)' },
-        { id: 'anvil', name: 'Yunque Forjador Astral', x: 4, z: -3, type: 'anvil', label: '🔨 Abrir Forja de Equipamiento' },
-        { id: 'bookshelf', name: 'Gran Librera Astral (Códice)', x: -5, z: 2, type: 'bookshelf', label: '📖 Códice de Arquetipos' },
-        { id: 'companion_nitz', name: 'Tu Criatura Acompañante Nitz', x: 0, z: -1, type: 'nitz_npc', label: '🐾 Interactuar con Nitz (Cuidado/Chat Gp-3)' },
-        { id: 'door_to_vecindario', name: 'Puerta Principal de la Cabaña', x: 0, z: 6.5, type: 'door_vecindario', label: '🚪 Salir al Vecindario Astral' }
+        { id: 'stash', name: 'Almacén Táctico (Stash)', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro' },
+        { id: 'bookshelf', name: 'Terminal Códice de Arquetipos', x: -5, z: 2, type: 'bookshelf', label: '🖥️ Base de Datos de Nitz' },
+        { id: 'companion_nitz', name: 'Tu Criatura Acompañante Nitz', x: 0, z: -1, type: 'nitz_npc', label: '🐾 Interactuar con Nitz' },
+        { id: 'door_to_vecindario', name: 'Puerta Blindada (Salida)', x: 0, z: 6.5, type: 'door_vecindario', label: '🚪 Salir al Exterior' },
+        // Nuevos Bancos de Trabajo Modulares (Arc Raiders style)
+        { id: 'workbench_forge', name: 'Herrería de Combate Pesado', x: 5, z: -3, type: 'forge', label: '⚒️ Fabricar Armas y Blindaje' },
+        { id: 'workbench_weaver', name: 'Telar de Supervivencia', x: -5, z: -3, type: 'weaver', label: '🧵 Fabricar Mochilas y Tela' },
+        { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter', label: '🔮 Fabricar Grimorios y Joyas' }
       ];
       setPlayerX(0);
       setPlayerZ(4);
@@ -1089,8 +1091,8 @@ export function FirstPersonWorld({
 
     // Atmospheric Fog depending on current zone
     if (currentMap === 'cabin') {
-      scene.background = new THREE.Color(0x0e101f);
-      scene.fog = new THREE.FogExp2(0x0e101f, 0.08);
+      scene.background = new THREE.Color(0x050608); // Pitch black/tactical
+      scene.fog = new THREE.FogExp2(0x050608, 0.08);
     } else if (currentMap === 'neighborhood') {
       scene.background = new THREE.Color(0x111625);
       scene.fog = new THREE.FogExp2(0x111625, 0.025);
@@ -1126,7 +1128,7 @@ export function FirstPersonWorld({
     floorGeo.rotateX(-Math.PI / 2);
 
     let floorColor = 0x242b40;
-    if (currentMap === 'cabin') floorColor = 0x1f1929; // Wood tiles
+    if (currentMap === 'cabin') floorColor = 0x0a0c10; // Dark industrial metal floor
     else if (currentMap === 'neighborhood') floorColor = 0x1a2e26; // Grassy green
     else if (currentMap === 'lobby') floorColor = 0x222638; // Stone pavement
     else if (currentMap === 'map1') floorColor = 0x132a1e; // Mystic velvet forest
@@ -3256,51 +3258,94 @@ export function FirstPersonWorld({
       <AnimatePresence>
         {showQuickInventory && activeOverlay === 'none' && (
           <motion.div
-            initial={{ opacity: 0, x: -50 }}
-            animate={{ opacity: 1, x: 0 }}
-            exit={{ opacity: 0, x: -50 }}
-            className="absolute left-6 top-24 z-40 bg-[#0d0f1a]/90 border border-white/20 p-5 rounded-xl shadow-2xl backdrop-blur-md min-w-[280px] pointer-events-auto"
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="absolute inset-2 md:inset-10 z-40 bg-[#07080c]/95 border-2 border-red-900/30 rounded-xl shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col md:flex-row overflow-hidden"
           >
-            <h3 className="text-white font-bold tracking-widest text-sm mb-4 border-b border-white/10 pb-2 uppercase flex items-center gap-2">
-              <span className="text-emerald-400">Tactical</span> Inventory
-            </h3>
-            
-            <div className="space-y-4">
-              <div>
-                <h4 className="text-[10px] text-tertiary mb-1.5 font-mono">Equipo Actual</h4>
-                <div className="flex gap-2">
-                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Arma Equipada">
-                    {progress.equippedWeaponId ? '⚔️' : '✋'}
+            {/* Left Panel: Stats & Weight */}
+            <div className="w-full md:w-1/3 bg-black/40 border-r border-red-900/30 p-6 flex flex-col">
+              <h3 className="text-red-500 font-bold tracking-widest text-lg mb-6 border-b border-red-900/50 pb-2 uppercase flex items-center gap-2">
+                <Shield className="w-5 h-5" /> TACTICAL STATUS
+              </h3>
+              
+              <div className="space-y-6 flex-1">
+                <div className="bg-[#110505] border border-red-900/40 p-4 rounded-lg">
+                  <span className="text-[10px] text-red-500/70 font-mono uppercase block mb-1">Carga Física (Temp Bag)</span>
+                  <div className="flex justify-between items-end mb-2">
+                    <span className="text-2xl font-bold text-gray-200">{
+                      (tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 +
+                      (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 +
+                      (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3
+                    } <span className="text-xs text-gray-500">KG</span></span>
+                    <span className="text-xs text-red-500 font-mono">/ {progress.equipment?.backpack?.weightCapacity || 30} KG MAX</span>
                   </div>
-                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Escudo Equipado">
-                    {progress.equippedShieldId ? '🛡️' : '❌'}
+                  <div className="w-full bg-black h-2 rounded-full overflow-hidden border border-red-900/50">
+                    <div className="bg-red-600 h-full transition-all" style={{ width: `${Math.min(100, ((tempBag.wood.common * 1 + tempBag.stone.common * 2 + tempBag.metal.common * 3) / (progress.equipment?.backpack?.weightCapacity || 30)) * 100)}%` }} />
                   </div>
-                  <div className="w-12 h-12 bg-white/5 border border-white/10 rounded flex items-center justify-center text-lg" title="Armadura Equipada">
-                    {progress.equippedArmorId ? '🎽' : '👕'}
+                </div>
+
+                <div className="grid grid-cols-2 gap-3 text-xs">
+                  <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
+                    <span className="text-gray-500 block text-[9px] uppercase">HP Máximo</span>
+                    <span className="text-emerald-400 font-bold">{progress.maxHp || 100}</span>
+                  </div>
+                  <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
+                    <span className="text-gray-500 block text-[9px] uppercase">Oro de Supervivencia</span>
+                    <span className="text-yellow-500 font-bold">{progress.gold} G</span>
                   </div>
                 </div>
               </div>
+            </div>
 
-              <div>
-                <h4 className="text-[10px] text-tertiary mb-1.5 font-mono">Loot Sesión (Temporal)</h4>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <div className="bg-amber-900/40 p-2 rounded border border-amber-500/20 text-gray-200">
-                    🌲 Madera: {tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary}
+            {/* Right Panel: Equipment Doll */}
+            <div className="flex-1 p-6 flex flex-col items-center justify-center relative">
+              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500 via-transparent to-transparent pointer-events-none" />
+              
+              <div className="grid grid-cols-3 gap-4 relative z-10 w-full max-w-md">
+                
+                {/* Left Column (Main Hand, Rings) */}
+                <div className="space-y-4 flex flex-col items-end">
+                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center p-1 relative group">
+                    <span className="text-[8px] absolute top-1 text-gray-500">MAIN HAND</span>
+                    <span className="text-xl mt-2">{progress.equipment?.mainHand ? '🔫' : '✋'}</span>
                   </div>
-                  <div className="bg-slate-800/60 p-2 rounded border border-slate-500/20 text-gray-200">
-                    🪨 Piedra: {tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary}
-                  </div>
-                  <div className="bg-gray-700/60 p-2 rounded border border-gray-400/20 text-gray-200">
-                    ⚙️ Metal: {tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary}
-                  </div>
-                  <div className="bg-fuchsia-900/40 p-2 rounded border border-fuchsia-500/20 text-gray-200">
-                    🔮 Esencia: {tempBag.essence.common + tempBag.essence.rare + tempBag.essence.epic + tempBag.essence.legendary}
+                  <div className="w-12 h-12 bg-[#0a0b10] border border-gray-800 rounded-lg flex flex-col items-center justify-center relative">
+                    <span className="text-[7px] absolute top-1 text-gray-600">RING 1</span>
                   </div>
                 </div>
-              </div>
 
-              <div className="text-[9px] text-gray-500 font-mono text-center mt-2 pt-2 border-t border-white/5">
-                Presiona TAB para cerrar
+                {/* Center Column (Head, Chest, Legs) */}
+                <div className="space-y-4 flex flex-col items-center">
+                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center relative">
+                    <span className="text-[8px] absolute top-1 text-gray-500">HEAD</span>
+                    <span className="text-xl mt-2">{progress.equipment?.head ? '🪖' : '👤'}</span>
+                  </div>
+                  <div className="w-20 h-24 bg-[#0a0b10] border border-gray-600 rounded-lg flex flex-col items-center justify-center relative shadow-[0_0_15px_rgba(255,0,0,0.1)]">
+                    <span className="text-[8px] absolute top-1 text-gray-400">CHEST RIG</span>
+                    <span className="text-3xl mt-2">{progress.equipment?.chest ? '🦺' : '👕'}</span>
+                  </div>
+                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center relative">
+                    <span className="text-[8px] absolute top-1 text-gray-500">LEGS</span>
+                    <span className="text-xl mt-2">{progress.equipment?.legs ? '🥾' : '👖'}</span>
+                  </div>
+                </div>
+
+                {/* Right Column (Off Hand, Backpack) */}
+                <div className="space-y-4 flex flex-col items-start">
+                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center p-1 relative">
+                    <span className="text-[8px] absolute top-1 text-gray-500">OFF HAND</span>
+                    <span className="text-xl mt-2">{progress.equipment?.offHand ? '🛡️' : '❌'}</span>
+                  </div>
+                  <div className="w-16 h-16 bg-[#1a0f0f] border border-red-900/50 rounded-lg flex flex-col items-center justify-center relative">
+                    <span className="text-[8px] absolute top-1 text-red-500/70">BACKPACK</span>
+                    <span className="text-xl mt-2">{progress.equipment?.backpack ? '🎒' : '📦'}</span>
+                  </div>
+                </div>
+
+              </div>
+              <div className="mt-8 text-[10px] text-gray-600 font-mono uppercase tracking-widest">
+                [ Suelta TAB para cerrar interface ]
               </div>
             </div>
           </motion.div>
