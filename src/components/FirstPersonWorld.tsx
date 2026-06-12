@@ -94,39 +94,6 @@ export function FirstPersonWorld({
   const [cameraAngle, setCameraAngle] = useState<number>(0); // in radians
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
-  // Coordinate & Camera Refs for frame-rate independent physics
-  const playerXRef = useRef<number>(0);
-  const playerZRef = useRef<number>(5);
-  const cameraAngleRef = useRef<number>(0);
-  const cameraPitchRef = useRef<number>(0);
-  const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
-  const activeNodesRef = useRef<InteractiveNode3D[]>([]);
-
-  // Synchronize state changes to refs
-  useEffect(() => {
-    playerXRef.current = playerX;
-  }, [playerX]);
-
-  useEffect(() => {
-    playerZRef.current = playerZ;
-  }, [playerZ]);
-
-  useEffect(() => {
-    cameraAngleRef.current = cameraAngle;
-  }, [cameraAngle]);
-
-  useEffect(() => {
-    cameraPitchRef.current = cameraPitch;
-  }, [cameraPitch]);
-
-  useEffect(() => {
-    onlinePlayersRef.current = onlinePlayers;
-  }, [onlinePlayers]);
-
-  useEffect(() => {
-    activeNodesRef.current = activeNodes;
-  }, [activeNodes]);
-
   // Active overlay modal state
   const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating'>('none');
 
@@ -191,6 +158,39 @@ export function FirstPersonWorld({
 
   // Input controller states
   const [keys, setKeys] = useState<{ [key: string]: boolean }>({});
+
+  // Coordinate & Camera Refs for frame-rate independent physics
+  const playerXRef = useRef<number>(0);
+  const playerZRef = useRef<number>(5);
+  const cameraAngleRef = useRef<number>(0);
+  const cameraPitchRef = useRef<number>(0);
+  const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
+  const activeNodesRef = useRef<InteractiveNode3D[]>([]);
+
+  // Synchronize state changes to refs
+  useEffect(() => {
+    playerXRef.current = playerX;
+  }, [playerX]);
+
+  useEffect(() => {
+    playerZRef.current = playerZ;
+  }, [playerZ]);
+
+  useEffect(() => {
+    cameraAngleRef.current = cameraAngle;
+  }, [cameraAngle]);
+
+  useEffect(() => {
+    cameraPitchRef.current = cameraPitch;
+  }, [cameraPitch]);
+
+  useEffect(() => {
+    onlinePlayersRef.current = onlinePlayers;
+  }, [onlinePlayers]);
+
+  useEffect(() => {
+    activeNodesRef.current = activeNodes;
+  }, [activeNodes]);
 
   // Elements references for Three.js
   const mountRef = useRef<HTMLDivElement | null>(null);
