@@ -948,11 +948,6 @@ export function FirstPersonWorld({
     return found;
   };
 
-  const handleBankResourcesDirectly = () => {
-    setTempBag(nextInventory);
-    triggerNotification("🏦 Se han vaciado tus bolsillos temporalmente hacia la reserva permanente.");
-  };
-
   // Player Death Listener
   useEffect(() => {
     if (progress.hp !== undefined && progress.hp <= 0 && currentMap === 'map3') {
