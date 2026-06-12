@@ -144,6 +144,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setIsTyping(true);
 
+    try {
       const badWords = ['tonto', 'mierda', 'estúpido', 'idiota', 'maldito', 'puta', 'cabrón', 'imbécil', 'feo'];
       const isInsult = badWords.some(w => userText.toLowerCase().includes(w));
       
