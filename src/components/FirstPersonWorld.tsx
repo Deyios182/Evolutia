@@ -3009,6 +3009,73 @@ export function FirstPersonWorld({
         )}
       </AnimatePresence>
 
+      {/* MOBILE TOUCH CONTROLS */}
+      {isMobile && activeOverlay === 'none' && !pvpDuel?.inCombat && (
+        <div className="absolute inset-0 pointer-events-none z-30 flex justify-between items-end p-6 md:p-8">
+          
+          {/* Virtual Joystick Zone */}
+          <div 
+            className="w-32 h-32 bg-black/20 rounded-full border-2 border-white/20 pointer-events-auto relative flex items-center justify-center backdrop-blur-md mb-8"
+            onTouchStart={handleJoystickStart}
+            onTouchMove={handleJoystickMove}
+            onTouchEnd={handleJoystickEnd}
+            onTouchCancel={handleJoystickEnd}
+          >
+            <div 
+              className="w-12 h-12 bg-white/40 rounded-full shadow-lg"
+              style={{
+                transform: `translate(${joystickPos.x}px, ${joystickPos.y}px)`
+              }}
+            />
+          </div>
+
+          {/* Action Buttons Zone */}
+          <div className="flex flex-col gap-4 pointer-events-auto mb-8">
+            <div className="flex gap-4 justify-end">
+              <button 
+                className="w-14 h-14 rounded-full bg-emerald-500/80 border-2 border-emerald-400 text-white font-bold text-xl shadow-xl active:scale-90 transition-transform flex items-center justify-center backdrop-blur-md"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  const kbEvent = new KeyboardEvent('keydown', { key: 'f' });
+                  window.dispatchEvent(kbEvent);
+                  setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'f' })), 100);
+                }}
+              >
+                F
+              </button>
+            </div>
+            <div className="flex gap-4 justify-end mt-2">
+              <button 
+                className="w-14 h-14 rounded-full bg-indigo-500/80 border-2 border-indigo-400 text-white font-bold text-xl shadow-xl active:scale-90 transition-transform flex items-center justify-center backdrop-blur-md"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  const kbEvent = new KeyboardEvent('keydown', { key: 'e' });
+                  window.dispatchEvent(kbEvent);
+                  setTimeout(() => window.dispatchEvent(new KeyboardEvent('keyup', { key: 'e' })), 100);
+                }}
+              >
+                E
+              </button>
+              <button 
+                className="w-14 h-14 rounded-full bg-pink-500/80 border-2 border-pink-400 text-white font-bold text-xl shadow-xl active:scale-90 transition-transform flex items-center justify-center backdrop-blur-md"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  const kbEvent = new KeyboardEvent('keydown', { key: 'v' });
+                  window.dispatchEvent(kbEvent);
+                }}
+                onPointerUp={(e) => {
+                  e.preventDefault();
+                  const kbEvent = new KeyboardEvent('keyup', { key: 'v' });
+                  window.dispatchEvent(kbEvent);
+                }}
+              >
+                V
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

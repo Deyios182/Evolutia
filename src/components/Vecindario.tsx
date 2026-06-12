@@ -358,7 +358,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
         plotsList.push({
           id: docSnap.id,
           ownerName: data.username || 'Guardián',
-          title: `Cabaña de ${data.username || 'Guardián'}`,
+          title: \`Cabaña de \${data.username || 'Guardián'}\`,
           nitzName: data.avatar?.name || 'Nitz Místico',
           emotions: data.dominantEmotion || 'Serenidad',
           isPlayer: false,
@@ -434,7 +434,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
       } catch (err) {
         console.error("Error giving companion heart:", err);
         try {
-          handleFirestoreError(err, OperationType.WRITE, `users/${plotId}`);
+          handleFirestoreError(err, OperationType.WRITE, \`users/\${plotId}\`);
         } catch (e) {
           // Keep it caught so it doesn't interrupt game play flow
         }
@@ -1200,201 +1200,6 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
                           >
                             <div className="space-y-0.5">
                               <span className="font-bold text-[#dbdbea] block">{item.name}</span>
-            </div>
-
-            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
-              
-              {/* Interactive 3D Room Studio */}
-              <div className="lg:col-span-8 flex flex-col justify-between h-[500px] bg-gradient-to-b from-[#111326] to-[#04050d] rounded-xl border border-white/10 overflow-hidden relative shadow-2xl p-4">
-                
-                {/* Visual HUD overlays */}
-                <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
-                  <span className="text-[9px] uppercase font-bold tracking-widest text-[#dec1ac] bg-black/65 border border-white/10 p-2 rounded block backdrop-blur-sm">
-                    Estudio de Construcción 3D
-                  </span>
-                </div>
-
-                <div className="absolute top-4 right-4 z-10 flex gap-2">
-                  <div className="bg-black/65 border border-white/10 rounded-full px-3 py-1 text-[9.5px] text-gray-300 font-mono flex items-center gap-1.5 backdrop-blur-md">
-                    <ZoomIn className="w-3.5 h-3.5 text-tertiary" />
-                    <span>Arrastra para Orbitar &nbsp;•&nbsp; Scroll para Zoom</span>
-                  </div>
-                </div>
-
-                {/* Canvas viewport Mount */}
-                <canvas 
-                  ref={canvasRef} 
-                  onClick={handleCanvasClick}
-                  onMouseDown={handlePointerDown}
-                  onMouseMove={handlePointerMove}
-                  onMouseUp={handlePointerUpOrLeave}
-                  onMouseLeave={handlePointerUpOrLeave}
-                  onWheel={handleWheel}
-                  className="w-full h-full rounded-lg cursor-grab active:cursor-grabbing" 
-                />
-
-                {/* Interactive help text overlay */}
-                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) && (
-                  <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none text-center">
-                    <p className="text-[10px] text-emerald-400 bg-black/80 border border-emerald-500/20 px-4 py-1.5 rounded-full inline-block font-mono uppercase tracking-wider shadow-lg">
-                      👋 HAZ CLIC EN LOS ANILLOS BRILLANTES DEL PISO PARA COLOCAR MUEBLES, O EN LOS MUEBLES PARA ROTARLOS!
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Sidebar editing controllers panel */}
-              <div className="lg:col-span-4 bg-[#121424]/95 rounded-xl border border-white/10 p-5 flex flex-col justify-between h-[500px] overflow-y-auto custom-scrollbar">
-                
-                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) ? (
-                  /* THE PLAYER BUILD CHANNELS EDITOR */
-                  <div className="space-y-4 flex-1 flex flex-col justify-between">
-                    {visitedPlot.isPlayer && (
-                      <div className="flex gap-2">
-                        <button onClick={() => setShowUpgradeModal(true)} className="flex-1 bg-[#dec1ac] text-black font-bold text-[10px] py-1.5 rounded hover:bg-white transition-colors uppercase">
-                          Mejorar Nivel {(progress.plotLevel || 1)}
-                        </button>
-                        <button onClick={() => setShowPermissionsModal(true)} className="flex-1 bg-[#23263b] text-white border border-white/10 font-bold text-[10px] py-1.5 rounded hover:bg-[#2d314f] transition-colors uppercase">
-                          Permisos
-                        </button>
-                      </div>
-                    )}
-                    <div className="space-y-1.5 border-b border-white/5 pb-2">
-                      <h4 className="text-xs uppercase font-bold text-[#dec1ac] tracking-wide font-mono flex items-center gap-1.5">
-                        <Sofa className="w-4 h-4 text-tertiary" /> Forjas Construidas
-                      </h4>
-                      <p className="text-[10.5px] text-gray-400 leading-relaxed">Las siguientes ranuras corresponden a los cuadrantes del plano de tu cabaña.</p>
-                    </div>
-
-                    {/* Ranuras status panels */}
-                    <div className="space-y-2 flex-1 my-3 overflow-y-auto max-h-[300px] custom-scrollbar p-0.5">
-                      {[1, 2, 3, 4, 5].map((slot) => {
-                        const item = getPlacedItemInSlot(slot);
-                        return (
-                          <div key={slot} className="p-2 px-3 bg-black/45 border border-white/5 rounded-lg flex flex-col gap-2 text-xs">
-                            <div className="flex justify-between items-center">
-                              <span className="font-mono text-[10.5px] text-emerald-400">Ranura Piso #{slot}</span>
-                              {item && (
-                                <button
-                                  onClick={() => handleRotateItem(slot)}
-                                  className="text-[10px] text-[#dec1ac] hover:text-white p-1 bg-white/5 rounded flex items-center gap-1 font-mono transition-colors"
-                                  title="Rotar mueble 90º en 3D"
-                                >
-                                  <RotateCw className="w-3 h-3" />
-                                  <span>Rotar (90º)</span>
-                                </button>
-                              )}
-                            </div>
-
-                            {item ? (
-                              <div className="flex items-center justify-between bg-white/2 p-2 rounded border border-white/5">
-                                <span className="font-semibold text-[11px] truncate">{item.name}</span>
-                                <button
-                                  onClick={() => handleRemoveFurniture(slot)}
-                                  className="text-red-400 hover:text-red-300 p-1 bg-red-950/20 rounded transition-all ml-1"
-                                  title="Retirar del mapa 3D"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
-                              </div>
-                            ) : (
-                              <button
-                                onClick={() => setActiveSlotToDecorate(slot)}
-                                className="w-full py-1.5 bg-[#dec1ac]/15 hover:bg-[#dec1ac]/25 text-tertiary rounded-md font-bold text-[10.5px] border border-tertiary/20 flex items-center justify-center gap-1 transition-colors"
-                              >
-                                <Plus className="w-3.5 h-3.5" /> Colocar Accesorio
-                              </button>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-
-                    <div className="text-[10px] text-gray-500 italic uppercase tracking-wider font-mono border-t border-white/5 pt-2">
-                      Sugerencia: Cambia el ángulo orbitando la cámara de arriba a abajo.
-                    </div>
-                  </div>
-                ) : (
-                  /* VISITOR PANEL */
-                  <div className="space-y-6 flex-1 flex flex-col justify-between">
-                    <div className="space-y-4">
-                      <div>
-                        <span className="text-[9.5px] font-mono text-tertiary uppercase block">Inspección de Residencia 3D</span>
-                        <h4 className="text-md font-bold text-white font-headline-lg">Cabaña de {visitedPlot.ownerName}</h4>
-                      </div>
-
-                      <p className="text-xs text-gray-300 leading-relaxed font-sans">
-                        Has entrado en el santuario espiritual flotante de tu colega. Su Nitz vigila y brilla en sintonía con las frecuencias de {visitedPlot.emotions}.
-                      </p>
-
-                      <div className="space-y-2 pt-2">
-                        <span className="text-[10px] font-mono text-[#919097] uppercase block">Inventarios colocados en sala:</span>
-                        <div className="space-y-2">
-                          {visitedPlot.builtDecorations.map((d, idx) => (
-                            <div key={idx} className="p-2.5 bg-black/45 border border-white/5 rounded-lg text-xs flex justify-between items-center font-mono">
-                              <span className="text-gray-200 font-semibold">{d.name}</span>
-                              <span className="text-[9px] uppercase tracking-wider border border-white/10 px-2 py-0.5 rounded text-cyan-400 bg-cyan-950/15">
-                                {d.rarity}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                      {visitedPlot.isComunal && (
-                        <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg mt-4">
-                          <h5 className="text-xs text-emerald-400 font-bold uppercase mb-1">Tablón del Tutorial</h5>
-                          <p className="text-[10px] text-emerald-200/80 leading-relaxed font-mono">
-                            ¡Bienvenido a Evolutia! Aquí todos los nuevos creadores aprenden a forjar decoraciones y acariciar a su Nitz. 
-                            Tu Nitz de Origen evoluciona con tus emociones. Revisa la Cabaña de Crianza para interactuar con él.
-                          </p>
-                        </div>
-                      )}
-                    </div>
-
-                    <button
-                      onClick={() => handleLikeHouse(visitedPlot.id)}
-                      className="w-full p-3 bg-pink-500 hover:bg-pink-400 text-white font-black rounded-lg text-xs transition active:scale-95 flex items-center justify-center gap-2 shadow-lg"
-                    >
-                      <Heart className="w-4 h-4 fill-white" />
-                      <span>Dejar Regalo de Corazón (+10 EXP mística!)</span>
-                    </button>
-                  </div>
-                )}
-
-              </div>
-
-            </div>
-
-            {/* FLOATING UNPLACED FURNITURE ITEM SELECTOR POPUP */}
-            <AnimatePresence>
-              {activeSlotToDecorate !== null && (
-                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
-                  <motion.div 
-                    initial={{ opacity: 0, scale: 0.95 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.95 }}
-                    className="bg-[#121424] border border-white/10 p-5 rounded-2xl w-full max-w-md space-y-4"
-                  >
-                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
-                      <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Forjas Desarmadas para Ranura #{activeSlotToDecorate}</h4>
-                      <button 
-                        onClick={() => setActiveSlotToDecorate(null)}
-                        className="text-gray-400 hover:text-white transition-colors text-xs"
-                      >
-                        Cerrar
-                      </button>
-                    </div>
-
-                    {getUnplacedFurniture().length > 0 ? (
-                      <div className="space-y-2 max-h-[260px] overflow-y-auto custom-scrollbar p-1">
-                        {getUnplacedFurniture().map((item) => (
-                          <button
-                            key={item.id}
-                            onClick={() => handleSelectFurniture(item)}
-                            className="w-full text-left p-3 bg-black/45 border border-white/5 rounded-lg hover:border-tertiary hover:bg-[#1c1e33] transition-all flex items-center justify-between text-xs"
-                          >
-                            <div className="space-y-0.5">
-                              <span className="font-bold text-[#dbdbea] block">{item.name}</span>
                               <span className="text-[10px] text-gray-500 capitalize font-mono">Tipo: decoración • {item.rarity}</span>
                             </div>
                             <Plus className="w-4 h-4 text-tertiary" />
@@ -1556,3 +1361,5 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
     </div>
   );
 };
+
+export default Vecindario;
