@@ -1322,6 +1322,10 @@ export function FirstPersonWorld({
     const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean }[] = [];
     let lastNitzAttack = 0;
 
+    let isDragging = false;
+    let prevMouseX = 0;
+    let prevMouseY = 0;
+
     const handleMouseDown = (e: MouseEvent) => {
       const isLocked = document.pointerLockElement === renderer.domElement;
       
