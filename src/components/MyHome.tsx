@@ -37,7 +37,43 @@ export const MyHome: React.FC<MyHomeProps> = ({
   ]);
   const [inputText, setInputText] = useState('');
   const [isTyping, setIsTyping] = useState(false);
+  const [isCallActive, setIsCallActive] = useState(false);
+  const [isNitzSpeaking, setIsNitzSpeaking] = useState(false);
+  const synth = window?.speechSynthesis;
+
   const chatBottomRef = useRef<HTMLDivElement>(null);
+
+  const playVoice = (text: string) => {
+    if (!synth) return;
+    synth.cancel();
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    let pitch = 1.0;
+    let rate = 1.0;
+    const dominantName = getDominant().name;
+
+    if (playerProgress.phase === 1) {
+      pitch = 1.5; rate = 1.2;
+    } else if (dominantName === 'Ira') {
+      pitch = 0.9; rate = 1.4;
+    } else if (dominantName === 'Tristeza' || dominantName === 'Miedo') {
+      pitch = 0.6; rate = 0.8;
+    } else if (dominantName === 'Alegría' || dominantName === 'Amor') {
+      pitch = 1.2; rate = 1.1;
+    }
+
+    utterance.pitch = pitch;
+    utterance.rate = rate;
+    
+    const voices = synth.getVoices();
+    const esVoice = voices.find(v => v.lang.startsWith('es'));
+    if (esVoice) utterance.voice = esVoice;
+
+    utterance.onstart = () => setIsNitzSpeaking(true);
+    utterance.onend = () => setIsNitzSpeaking(false);
+    
+    synth.speak(utterance);
+  };
 
   // Scroller update
   useEffect(() => {
@@ -108,8 +144,18 @@ export const MyHome: React.FC<MyHomeProps> = ({
     setMessages((prev) => [...prev, userMsg]);
     setIsTyping(true);
 
-    try {
-      // Send chat payload to standard secure Express route /api/nitz/chat
+      const badWords = ['tonto', 'mierda', 'estúpido', 'idiota', 'maldito', 'puta', 'cabrón', 'imbécil', 'feo'];
+      const isInsult = badWords.some(w => userText.toLowerCase().includes(w));
+      
+      let extraIraText = '';
+      if (isInsult) {
+        onUpdateEmotions(prev => ({
+          ...prev,
+          Ira: Math.min(100, prev.Ira + 15)
+        }));
+        extraIraText = "¡No me hables así! Siento cómo la ira me consume por dentro.";
+      }
+
       const response = await fetch('/api/nitz/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -127,17 +173,22 @@ export const MyHome: React.FC<MyHomeProps> = ({
       }
 
       const data = await response.json();
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: `n_${Date.now()}`,
-          sender: playerProgress.avatar.name || 'Nitz de Origen',
-          avatarUrl: '',
-          text: data.text || '*emite destellos indescifrables*',
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isNitz: true,
-        },
-      ]);
+      const textToSpeak = isInsult ? extraIraText : (data.text || '*emite destellos indescifrables*');
+
+      const newResponseMsg: ChatMessage = {
+        id: `n_${Date.now()}`,
+        sender: playerProgress.avatar.name || 'Nitz de Origen',
+        avatarUrl: '',
+        text: textToSpeak,
+        timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        isNitz: true,
+      };
+
+      setMessages((prev) => [...prev, newResponseMsg]);
+
+      if (isCallActive) {
+        playVoice(textToSpeak);
+      }
     } catch (err) {
       console.error(err);
       // Fallback
@@ -158,7 +209,75 @@ export const MyHome: React.FC<MyHomeProps> = ({
   };
 
   return (
-    <div className="w-full max-w-6xl mx-auto space-y-6 md:p-2">
+    <div className="w-full max-w-6xl mx-auto space-y-6 md:p-2 relative">
+      <AnimatePresence>
+        {isCallActive && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-6 bg-black/90 backdrop-blur-md"
+          >
+            <div className="w-full max-w-sm bg-[#121424] border border-tertiary/40 rounded-3xl p-8 flex flex-col items-center gap-6 shadow-2xl relative overflow-hidden">
+              <div className="absolute inset-0 bg-tertiary/5 animate-pulse pointer-events-none" />
+              
+              <div className="w-24 h-24 rounded-full border-2 border-tertiary/50 bg-[#1b1e32] flex items-center justify-center relative shadow-[0_0_30px_rgba(222,193,172,0.2)]">
+                <span className="text-4xl animate-bounce">🐾</span>
+                {isNitzSpeaking && (
+                  <div className="absolute inset-0 rounded-full border-2 border-tertiary animate-ping opacity-75" />
+                )}
+              </div>
+
+              <div className="text-center space-y-1 z-10">
+                <h3 className="text-xl font-bold text-white">{playerProgress.avatar.name || 'Nitz'}</h3>
+                <p className="text-xs text-tertiary font-mono">Conexión Astral Establecida</p>
+              </div>
+
+              {/* Waveform Visualization */}
+              <div className="flex items-center gap-1 h-8 z-10">
+                {[...Array(12)].map((_, i) => (
+                  <motion.div
+                    key={i}
+                    animate={isNitzSpeaking ? {
+                      height: ['10%', '100%', '30%', '80%', '20%'],
+                      transition: { repeat: Infinity, duration: 0.5 + Math.random() * 0.5, ease: 'easeInOut' }
+                    } : { height: '10%' }}
+                    className="w-1.5 bg-emerald-400 rounded-full"
+                  />
+                ))}
+              </div>
+
+              <form 
+                onSubmit={handleSendMessage}
+                className="w-full mt-2 flex gap-2 z-10"
+              >
+                <input 
+                  type="text" 
+                  value={inputText}
+                  onChange={e => setInputText(e.target.value)}
+                  placeholder="Háblale a Nitz..."
+                  className="flex-1 bg-black/50 border border-white/10 rounded px-3 py-2 text-xs text-white"
+                />
+                <button type="submit" disabled={isTyping || !inputText.trim()} className="bg-tertiary hover:bg-white text-black px-3 rounded text-xs font-bold transition-all disabled:opacity-50">Enviar</button>
+              </form>
+
+              <div className="w-full pt-4 border-t border-white/10 flex justify-center gap-6 z-10">
+                <button 
+                  onClick={() => {
+                    synth?.cancel();
+                    setIsCallActive(false);
+                  }}
+                  className="bg-red-600 hover:bg-red-500 w-12 h-12 rounded-full flex items-center justify-center shadow-lg active:scale-90 transition-all"
+                  title="Colgar Llamada"
+                >
+                  <Trash className="w-5 h-5 text-white" />
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         
         {/* Left Side: 3D Render & Interactive Sandbox Stage */}
@@ -228,16 +347,24 @@ export const MyHome: React.FC<MyHomeProps> = ({
             <MessageSquare className="w-4 h-4 text-[#dec1ac] animate-pulse" />
             <span className="text-xs font-bold uppercase tracking-wider text-white">Sintonizador Telepático Nitz (Gemini AI)</span>
           </div>
-          <span 
-            className="text-[10px] border px-2 py-0.5 rounded uppercase font-mono tracking-widest"
-            style={{ 
-              borderColor: `#${playerColorHexStr}44`,
-              backgroundColor: `#${playerColorHexStr}11`,
-              color: `#${playerColorHexStr}`
-            }}
-          >
-            Estado: {dominantName}
-          </span>
+          <div className="flex items-center gap-2">
+            <span 
+              className="text-[10px] border px-2 py-0.5 rounded uppercase font-mono tracking-widest"
+              style={{ 
+                borderColor: `#${playerColorHexStr}44`,
+                backgroundColor: `#${playerColorHexStr}11`,
+                color: `#${playerColorHexStr}`
+              }}
+            >
+              Estado: {dominantName}
+            </span>
+            <button 
+              onClick={() => setIsCallActive(true)}
+              className="bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-400/30 text-[10px] px-3 py-1 rounded-md transition-all font-bold tracking-widest"
+            >
+              📞 Llamada Astral
+            </button>
+          </div>
         </div>
 
         {/* Messaging Box */}

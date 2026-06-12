@@ -20,6 +20,7 @@ export interface AvatarCustomization {
   auraType: 'stellar' | 'vortex' | 'sparkles' | 'none';
   colorTheme: 'classic' | 'abyssal' | 'solstice' | 'primeval';
   clothing: 'none' | 'shawl' | 'armor_shard' | 'robe_sage';
+  traits?: string[];
 }
 
 export interface GatheringInventory {
@@ -59,6 +60,8 @@ export interface PlayerProgress {
   equippedShieldId?: string;
   equippedArmorId?: string;
   companionSummoned?: boolean;
+  plotLevel?: number;
+  authorizedBuilders?: string[];
 }
 
 export interface LobbyPlayer {

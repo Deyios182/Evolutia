@@ -32,12 +32,17 @@ function createDetailedNitzMesh(
   else if (avatar.colorTheme === 'primeval') nColor = 0xef4444;
 
   // 1. Body
+  const hasMetallic = avatar.traits?.includes('Escamas Metálicas');
   const bodyGeometry = new THREE.SphereGeometry(1.2, 24, 24);
   const bodyMaterial = new THREE.MeshPhongMaterial({
     color: 0xf5f8ff,
     emissive: 0x111422,
-    shininess: 90,
+    shininess: hasMetallic ? 150 : 90,
   });
+  if (hasMetallic) {
+    (bodyMaterial as any).metalness = 0.9;
+    (bodyMaterial as any).roughness = 0.1;
+  }
   const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
@@ -59,8 +64,11 @@ function createDetailedNitzMesh(
   eyesGroup.add(leftEyeSocket, rightEyeSocket);
 
   // Pupils (dynamically colored by emotion/theme)
+  const hasGlowingEyes = avatar.traits?.includes('Ojos Rutilantes');
   const pupilGeo = new THREE.SphereGeometry(0.08, 12, 12);
-  const pupilMat = new THREE.MeshBasicMaterial({ color: nColor });
+  const pupilMat = hasGlowingEyes 
+    ? new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 })
+    : new THREE.MeshBasicMaterial({ color: nColor });
   const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
   leftPupil.position.set(-0.45, 0, 0.18);
   leftPupil.scale.set(1.1, 1.3, 0.4);
@@ -158,12 +166,23 @@ function createDetailedNitzMesh(
     crownMesh.visible = false;
   }
 
+  // Chaos Horn trait
+  if (avatar.traits?.includes('Cuerno del Caos')) {
+    const hornGeo = new THREE.ConeGeometry(0.2, 0.8, 16);
+    const hornMat = new THREE.MeshPhongMaterial({ color: 0xffaa00, emissive: 0x5a4500, shininess: 150 });
+    const hornMesh = new THREE.Mesh(hornGeo, hornMat);
+    hornMesh.position.set(0, 1.2, 0.8);
+    hornMesh.rotation.x = Math.PI / 3;
+    group.add(hornMesh);
+  }
+
   // 6. Aura Outer Shell
-  const auraGeo = new THREE.SphereGeometry(1.8, 24, 24);
+  const hasFieryAura = avatar.traits?.includes('Aura Ígnea');
+  const auraGeo = new THREE.SphereGeometry(hasFieryAura ? 2.0 : 1.8, 24, 24);
   const auraMat = new THREE.MeshBasicMaterial({
-    color: nColor,
+    color: hasFieryAura ? 0xff0000 : nColor,
     transparent: true,
-    opacity: 0.15,
+    opacity: hasFieryAura ? 0.25 : 0.15,
     side: THREE.BackSide,
   });
   const auraMesh = new THREE.Mesh(auraGeo, auraMat);
@@ -210,9 +229,25 @@ interface Plot {
   emotions: string;
   isPlayer: boolean;
   builtDecorations: { name: string; slot: number; rarity: string; rotation?: number }[];
+  isComunal?: boolean;
+  plotLevel?: number;
+  authorizedBuilders?: string[];
 }
 
 const NEIGHBOR_PLOTS: Plot[] = [
+  {
+    id: 'plot_comunal',
+    ownerName: 'El Gran Árbol',
+    title: 'Casa Comunal y Tutorial',
+    nitzName: 'Sabio Orit',
+    emotions: 'Todas las Emociones',
+    isPlayer: false,
+    builtDecorations: [
+      { name: 'Trono del Rey Nitz', slot: 5, rarity: 'legendary', rotation: 0 },
+      { name: 'Altar de Cristal de Serenidad', slot: 2, rarity: 'rare', rotation: 0 }
+    ],
+    isComunal: true
+  },
   {
     id: 'plot_player',
     ownerName: 'Tú',
@@ -268,6 +303,10 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
   const [syncedNeighbors, setSyncedNeighbors] = useState<Plot[]>([]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
+  const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+  const [showPermissionsModal, setShowPermissionsModal] = useState(false);
+  const [newBuilderInput, setNewBuilderInput] = useState('');
+
   // Rotate dictionaries for placed items to allow direct 3D orientation
   const [rotations, setRotations] = useState<Record<number, number>>({
     1: 0, 2: 0, 3: 0, 4: 0, 5: 0
@@ -287,6 +326,8 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
         nitzName: progress.avatar.name || 'Tu Nitz de Origen',
         emotions: 'Alegría/Serenidad',
         isPlayer: true,
+        plotLevel: progress.plotLevel,
+        authorizedBuilders: progress.authorizedBuilders,
         builtDecorations: progress.houseDecorations.map(dec => {
           const item = progress.craftedItems.find(ci => ci.id === dec.itemId);
           return {
@@ -321,6 +362,8 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
           nitzName: data.avatar?.name || 'Nitz Místico',
           emotions: data.dominantEmotion || 'Serenidad',
           isPlayer: false,
+          plotLevel: data.plotLevel || 1,
+          authorizedBuilders: data.authorizedBuilders || [],
           builtDecorations: formattedDecs
         });
       });
@@ -418,8 +461,19 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
 
   const handleSelectFurniture = (item: CraftableItem) => {
     if (!visitedPlot || activeSlotToDecorate === null) return;
+    const canBuild = visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '');
+    if (!canBuild) return;
 
     playPlacementChime();
+    
+    // If not player's plot, do not edit progress locally (realtime collaboration would need a direct write to the neighbor's document)
+    // For now, we only support placing on our own locally. We fallback if it's someone else's.
+    if (!visitedPlot.isPlayer) {
+      alert("La edición cruzada de parcelas requiere backend asíncrono avanzado, pero tienes permisos.");
+      setActiveSlotToDecorate(null);
+      return;
+    }
+
     const nextDecorations = [...progress.houseDecorations];
     
     // Unplace existing slot item if any
@@ -667,6 +721,8 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
     };
 
     // Grab current furnishings
+    const canBuild = visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '');
+    
     const activeDecorations = visitedPlot.isPlayer 
       ? progress.houseDecorations.map(d => {
           const item = progress.craftedItems.find(ci => ci.id === d.itemId);
@@ -722,7 +778,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
         scene.add(furnMesh);
         furnitureMeshesRef.current.push({ slot, mesh: furnMesh });
 
-      } else if (visitedPlot.isPlayer) {
+      } else if (canBuild) {
         // Empty slot in player house -> Draw high fidelity glowing holographic ring pad
         const ringGeoP = new THREE.RingGeometry(0.38, 0.48, 16);
         ringGeoP.rotateX(-Math.PI / 2); // lie horizontal
@@ -983,7 +1039,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
                 />
 
                 {/* Interactive help text overlay */}
-                {visitedPlot.isPlayer && (
+                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) && (
                   <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none text-center">
                     <p className="text-[10px] text-emerald-400 bg-black/80 border border-emerald-500/20 px-4 py-1.5 rounded-full inline-block font-mono uppercase tracking-wider shadow-lg">
                       👋 HAZ CLIC EN LOS ANILLOS BRILLANTES DEL PISO PARA COLOCAR MUEBLES, O EN LOS MUEBLES PARA ROTARLOS!
@@ -995,9 +1051,19 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
               {/* Sidebar editing controllers panel */}
               <div className="lg:col-span-4 bg-[#121424]/95 rounded-xl border border-white/10 p-5 flex flex-col justify-between h-[500px] overflow-y-auto custom-scrollbar">
                 
-                {visitedPlot.isPlayer ? (
+                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) ? (
                   /* THE PLAYER BUILD CHANNELS EDITOR */
                   <div className="space-y-4 flex-1 flex flex-col justify-between">
+                    {visitedPlot.isPlayer && (
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowUpgradeModal(true)} className="flex-1 bg-[#dec1ac] text-black font-bold text-[10px] py-1.5 rounded hover:bg-white transition-colors uppercase">
+                          Mejorar Nivel {(progress.plotLevel || 1)}
+                        </button>
+                        <button onClick={() => setShowPermissionsModal(true)} className="flex-1 bg-[#23263b] text-white border border-white/10 font-bold text-[10px] py-1.5 rounded hover:bg-[#2d314f] transition-colors uppercase">
+                          Permisos
+                        </button>
+                      </div>
+                    )}
                     <div className="space-y-1.5 border-b border-white/5 pb-2">
                       <h4 className="text-xs uppercase font-bold text-[#dec1ac] tracking-wide font-mono flex items-center gap-1.5">
                         <Sofa className="w-4 h-4 text-tertiary" /> Forjas Construidas
@@ -1079,6 +1145,210 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
                           ))}
                         </div>
                       </div>
+                      {visitedPlot.isComunal && (
+                        <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg mt-4">
+                          <h5 className="text-xs text-emerald-400 font-bold uppercase mb-1">Tablón del Tutorial</h5>
+                          <p className="text-[10px] text-emerald-200/80 leading-relaxed font-mono">
+                            ¡Bienvenido a Evolutia! Aquí todos los nuevos creadores aprenden a forjar decoraciones y acariciar a su Nitz. 
+                            Tu Nitz de Origen evoluciona con tus emociones. Revisa la Cabaña de Crianza para interactuar con él.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    <button
+                      onClick={() => handleLikeHouse(visitedPlot.id)}
+                      className="w-full p-3 bg-pink-500 hover:bg-pink-400 text-white font-black rounded-lg text-xs transition active:scale-95 flex items-center justify-center gap-2 shadow-lg"
+                    >
+                      <Heart className="w-4 h-4 fill-white" />
+                      <span>Dejar Regalo de Corazón (+10 EXP mística!)</span>
+                    </button>
+                  </div>
+                )}
+
+              </div>
+
+            </div>
+
+            {/* FLOATING UNPLACED FURNITURE ITEM SELECTOR POPUP */}
+            <AnimatePresence>
+              {activeSlotToDecorate !== null && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-[#121424] border border-white/10 p-5 rounded-2xl w-full max-w-md space-y-4"
+                  >
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Forjas Desarmadas para Ranura #{activeSlotToDecorate}</h4>
+                      <button 
+                        onClick={() => setActiveSlotToDecorate(null)}
+                        className="text-gray-400 hover:text-white transition-colors text-xs"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+
+                    {getUnplacedFurniture().length > 0 ? (
+                      <div className="space-y-2 max-h-[260px] overflow-y-auto custom-scrollbar p-1">
+                        {getUnplacedFurniture().map((item) => (
+                          <button
+                            key={item.id}
+                            onClick={() => handleSelectFurniture(item)}
+                            className="w-full text-left p-3 bg-black/45 border border-white/5 rounded-lg hover:border-tertiary hover:bg-[#1c1e33] transition-all flex items-center justify-between text-xs"
+                          >
+                            <div className="space-y-0.5">
+                              <span className="font-bold text-[#dbdbea] block">{item.name}</span>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
+              
+              {/* Interactive 3D Room Studio */}
+              <div className="lg:col-span-8 flex flex-col justify-between h-[500px] bg-gradient-to-b from-[#111326] to-[#04050d] rounded-xl border border-white/10 overflow-hidden relative shadow-2xl p-4">
+                
+                {/* Visual HUD overlays */}
+                <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
+                  <span className="text-[9px] uppercase font-bold tracking-widest text-[#dec1ac] bg-black/65 border border-white/10 p-2 rounded block backdrop-blur-sm">
+                    Estudio de Construcción 3D
+                  </span>
+                </div>
+
+                <div className="absolute top-4 right-4 z-10 flex gap-2">
+                  <div className="bg-black/65 border border-white/10 rounded-full px-3 py-1 text-[9.5px] text-gray-300 font-mono flex items-center gap-1.5 backdrop-blur-md">
+                    <ZoomIn className="w-3.5 h-3.5 text-tertiary" />
+                    <span>Arrastra para Orbitar &nbsp;•&nbsp; Scroll para Zoom</span>
+                  </div>
+                </div>
+
+                {/* Canvas viewport Mount */}
+                <canvas 
+                  ref={canvasRef} 
+                  onClick={handleCanvasClick}
+                  onMouseDown={handlePointerDown}
+                  onMouseMove={handlePointerMove}
+                  onMouseUp={handlePointerUpOrLeave}
+                  onMouseLeave={handlePointerUpOrLeave}
+                  onWheel={handleWheel}
+                  className="w-full h-full rounded-lg cursor-grab active:cursor-grabbing" 
+                />
+
+                {/* Interactive help text overlay */}
+                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) && (
+                  <div className="absolute bottom-4 left-4 right-4 z-10 pointer-events-none text-center">
+                    <p className="text-[10px] text-emerald-400 bg-black/80 border border-emerald-500/20 px-4 py-1.5 rounded-full inline-block font-mono uppercase tracking-wider shadow-lg">
+                      👋 HAZ CLIC EN LOS ANILLOS BRILLANTES DEL PISO PARA COLOCAR MUEBLES, O EN LOS MUEBLES PARA ROTARLOS!
+                    </p>
+                  </div>
+                )}
+              </div>
+
+              {/* Sidebar editing controllers panel */}
+              <div className="lg:col-span-4 bg-[#121424]/95 rounded-xl border border-white/10 p-5 flex flex-col justify-between h-[500px] overflow-y-auto custom-scrollbar">
+                
+                {(visitedPlot.isPlayer || (visitedPlot.authorizedBuilders || []).includes(progress.username || '')) ? (
+                  /* THE PLAYER BUILD CHANNELS EDITOR */
+                  <div className="space-y-4 flex-1 flex flex-col justify-between">
+                    {visitedPlot.isPlayer && (
+                      <div className="flex gap-2">
+                        <button onClick={() => setShowUpgradeModal(true)} className="flex-1 bg-[#dec1ac] text-black font-bold text-[10px] py-1.5 rounded hover:bg-white transition-colors uppercase">
+                          Mejorar Nivel {(progress.plotLevel || 1)}
+                        </button>
+                        <button onClick={() => setShowPermissionsModal(true)} className="flex-1 bg-[#23263b] text-white border border-white/10 font-bold text-[10px] py-1.5 rounded hover:bg-[#2d314f] transition-colors uppercase">
+                          Permisos
+                        </button>
+                      </div>
+                    )}
+                    <div className="space-y-1.5 border-b border-white/5 pb-2">
+                      <h4 className="text-xs uppercase font-bold text-[#dec1ac] tracking-wide font-mono flex items-center gap-1.5">
+                        <Sofa className="w-4 h-4 text-tertiary" /> Forjas Construidas
+                      </h4>
+                      <p className="text-[10.5px] text-gray-400 leading-relaxed">Las siguientes ranuras corresponden a los cuadrantes del plano de tu cabaña.</p>
+                    </div>
+
+                    {/* Ranuras status panels */}
+                    <div className="space-y-2 flex-1 my-3 overflow-y-auto max-h-[300px] custom-scrollbar p-0.5">
+                      {[1, 2, 3, 4, 5].map((slot) => {
+                        const item = getPlacedItemInSlot(slot);
+                        return (
+                          <div key={slot} className="p-2 px-3 bg-black/45 border border-white/5 rounded-lg flex flex-col gap-2 text-xs">
+                            <div className="flex justify-between items-center">
+                              <span className="font-mono text-[10.5px] text-emerald-400">Ranura Piso #{slot}</span>
+                              {item && (
+                                <button
+                                  onClick={() => handleRotateItem(slot)}
+                                  className="text-[10px] text-[#dec1ac] hover:text-white p-1 bg-white/5 rounded flex items-center gap-1 font-mono transition-colors"
+                                  title="Rotar mueble 90º en 3D"
+                                >
+                                  <RotateCw className="w-3 h-3" />
+                                  <span>Rotar (90º)</span>
+                                </button>
+                              )}
+                            </div>
+
+                            {item ? (
+                              <div className="flex items-center justify-between bg-white/2 p-2 rounded border border-white/5">
+                                <span className="font-semibold text-[11px] truncate">{item.name}</span>
+                                <button
+                                  onClick={() => handleRemoveFurniture(slot)}
+                                  className="text-red-400 hover:text-red-300 p-1 bg-red-950/20 rounded transition-all ml-1"
+                                  title="Retirar del mapa 3D"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setActiveSlotToDecorate(slot)}
+                                className="w-full py-1.5 bg-[#dec1ac]/15 hover:bg-[#dec1ac]/25 text-tertiary rounded-md font-bold text-[10.5px] border border-tertiary/20 flex items-center justify-center gap-1 transition-colors"
+                              >
+                                <Plus className="w-3.5 h-3.5" /> Colocar Accesorio
+                              </button>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="text-[10px] text-gray-500 italic uppercase tracking-wider font-mono border-t border-white/5 pt-2">
+                      Sugerencia: Cambia el ángulo orbitando la cámara de arriba a abajo.
+                    </div>
+                  </div>
+                ) : (
+                  /* VISITOR PANEL */
+                  <div className="space-y-6 flex-1 flex flex-col justify-between">
+                    <div className="space-y-4">
+                      <div>
+                        <span className="text-[9.5px] font-mono text-tertiary uppercase block">Inspección de Residencia 3D</span>
+                        <h4 className="text-md font-bold text-white font-headline-lg">Cabaña de {visitedPlot.ownerName}</h4>
+                      </div>
+
+                      <p className="text-xs text-gray-300 leading-relaxed font-sans">
+                        Has entrado en el santuario espiritual flotante de tu colega. Su Nitz vigila y brilla en sintonía con las frecuencias de {visitedPlot.emotions}.
+                      </p>
+
+                      <div className="space-y-2 pt-2">
+                        <span className="text-[10px] font-mono text-[#919097] uppercase block">Inventarios colocados en sala:</span>
+                        <div className="space-y-2">
+                          {visitedPlot.builtDecorations.map((d, idx) => (
+                            <div key={idx} className="p-2.5 bg-black/45 border border-white/5 rounded-lg text-xs flex justify-between items-center font-mono">
+                              <span className="text-gray-200 font-semibold">{d.name}</span>
+                              <span className="text-[9px] uppercase tracking-wider border border-white/10 px-2 py-0.5 rounded text-cyan-400 bg-cyan-950/15">
+                                {d.rarity}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                      {visitedPlot.isComunal && (
+                        <div className="p-3 bg-emerald-950/30 border border-emerald-500/30 rounded-lg mt-4">
+                          <h5 className="text-xs text-emerald-400 font-bold uppercase mb-1">Tablón del Tutorial</h5>
+                          <p className="text-[10px] text-emerald-200/80 leading-relaxed font-mono">
+                            ¡Bienvenido a Evolutia! Aquí todos los nuevos creadores aprenden a forjar decoraciones y acariciar a su Nitz. 
+                            Tu Nitz de Origen evoluciona con tus emociones. Revisa la Cabaña de Crianza para interactuar con él.
+                          </p>
+                        </div>
+                      )}
                     </div>
 
                     <button
@@ -1138,6 +1408,142 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
                         <p className="text-[10px] text-[#dec1ac]">Usa tus materiales forjados en el Workbench para crear mesas o altar místico primero.</p>
                       </div>
                     )}
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* PLOT UPGRADE MODAL */}
+            <AnimatePresence>
+              {showUpgradeModal && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-[#121424] border border-white/10 p-5 rounded-2xl w-full max-w-sm space-y-4 shadow-2xl"
+                  >
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-bold text-white uppercase tracking-wider font-headline-lg text-center">
+                        Mejorar Nivel de Parcela
+                      </h4>
+                      <p className="text-xs text-center text-tertiary">Sube de nivel para desbloquear más ranuras (Próximamente)</p>
+                    </div>
+                    
+                    <div className="p-4 bg-black/45 border border-white/5 rounded-lg flex flex-col items-center justify-center gap-2">
+                      <div className="text-xs uppercase font-mono tracking-widest text-emerald-400">Nivel Actual</div>
+                      <div className="text-3xl font-black text-white">{progress.plotLevel || 1}</div>
+                      <div className="text-[10px] text-gray-500 font-mono mt-1">Coste sig. nivel: {(progress.plotLevel || 1) * 200}g</div>
+                    </div>
+
+                    <div className="flex gap-2 pt-2">
+                      <button 
+                        onClick={() => setShowUpgradeModal(false)}
+                        className="flex-1 bg-white/5 hover:bg-white/10 text-white font-bold py-2 rounded text-xs transition-colors"
+                      >
+                        Cancelar
+                      </button>
+                      <button 
+                        onClick={() => {
+                          const cost = (progress.plotLevel || 1) * 200;
+                          if (progress.gold >= cost) {
+                            onSaveProgress({
+                              ...progress,
+                              gold: progress.gold - cost,
+                              plotLevel: (progress.plotLevel || 1) + 1
+                            });
+                            setShowUpgradeModal(false);
+                          } else {
+                            alert("¡No tienes suficiente oro para esta mejora!");
+                          }
+                        }}
+                        className="flex-1 bg-[#dec1ac] hover:bg-white text-black font-black py-2 rounded text-xs transition-colors"
+                      >
+                        Mejorar Ahora
+                      </button>
+                    </div>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+
+            {/* PERMISSIONS MODAL */}
+            <AnimatePresence>
+              {showPermissionsModal && (
+                <div className="fixed inset-0 bg-black/80 z-50 flex items-center justify-center p-4 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="bg-[#121424] border border-white/10 p-5 rounded-2xl w-full max-w-md space-y-4 shadow-2xl"
+                  >
+                    <div className="flex justify-between items-center border-b border-white/5 pb-2">
+                      <h4 className="text-xs font-bold text-white uppercase tracking-wider font-mono">
+                        Permisos de Construcción
+                      </h4>
+                      <button 
+                        onClick={() => setShowPermissionsModal(false)}
+                        className="text-gray-400 hover:text-white transition-colors text-xs"
+                      >
+                        Cerrar
+                      </button>
+                    </div>
+
+                    <div className="space-y-3">
+                      <p className="text-[10.5px] text-gray-400 leading-relaxed">
+                        Agrega el nombre de usuario de tus amigos para otorgarles permisos de decoración en tu cabaña. 
+                        Cuidado, ellos podrán colocar o eliminar muebles.
+                      </p>
+
+                      <div className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={newBuilderInput}
+                          onChange={(e) => setNewBuilderInput(e.target.value)}
+                          placeholder="Username exacto..."
+                          className="flex-1 bg-black/50 border border-white/10 p-2.5 rounded text-xs text-white"
+                        />
+                        <button
+                          onClick={() => {
+                            if (newBuilderInput.trim()) {
+                              const newAuth = [...(progress.authorizedBuilders || [])];
+                              if (!newAuth.includes(newBuilderInput.trim())) {
+                                newAuth.push(newBuilderInput.trim());
+                                onSaveProgress({ ...progress, authorizedBuilders: newAuth });
+                              }
+                              setNewBuilderInput('');
+                            }
+                          }}
+                          className="bg-emerald-500 hover:bg-emerald-400 text-white font-bold px-3 py-2 rounded text-[10px] uppercase transition-colors"
+                        >
+                          Añadir
+                        </button>
+                      </div>
+
+                      <div className="pt-2">
+                        <span className="text-[9.5px] font-mono uppercase text-tertiary block mb-2">Constructores Autorizados</span>
+                        <div className="space-y-1.5 max-h-[150px] overflow-y-auto custom-scrollbar pr-1">
+                          {(progress.authorizedBuilders || []).length === 0 ? (
+                            <div className="text-[10px] text-gray-500 italic p-2 bg-white/5 rounded border border-white/5">Nadie autorizado aún.</div>
+                          ) : (
+                            (progress.authorizedBuilders || []).map(b => (
+                              <div key={b} className="flex justify-between items-center p-2 bg-black/45 border border-white/5 rounded">
+                                <span className="text-xs text-white">{b}</span>
+                                <button 
+                                  onClick={() => {
+                                    const nextAuth = progress.authorizedBuilders?.filter(x => x !== b) || [];
+                                    onSaveProgress({ ...progress, authorizedBuilders: nextAuth });
+                                  }}
+                                  className="text-red-400 hover:text-red-300 text-[10px] uppercase font-bold"
+                                >
+                                  Remover
+                                </button>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   </motion.div>
                 </div>
               )}

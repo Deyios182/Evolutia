@@ -57,11 +57,12 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   gold: 150,
   exp: 0,
   avatar: {
-    name: 'Nitz de Origen',
+    name: 'Orit',
     accessory: 'none',
     auraType: 'stellar',
     colorTheme: 'classic',
     clothing: 'none',
+    traits: ['Afectuoso']
   },
   phase: 1,
   emotions: INITIAL_EMOTIONS,
@@ -70,11 +71,13 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   inventory: DEFAULT_INVENTORY,
   craftedItems: [
     { id: 'start_sword', name: 'Espada de Novicio', type: 'equipment', subType: 'weapon', rarity: 'common', statBonus: '+5% Fuerza Física', equipped: true },
-    { id: 'init_decor_table', name: 'Mesa de Cedro Común', type: 'furniture', rarity: 'common', placed: true }
+    { id: 'init_decor_table', name: 'Mesa de Cedro de los Vientos', type: 'furniture', rarity: 'common', placed: true }
   ],
   houseDecorations: [
     { itemId: 'init_decor_table', slot: 1 }
-  ]
+  ],
+  plotLevel: 1,
+  authorizedBuilders: []
 };
 
 export default function App() {
@@ -108,6 +111,8 @@ export default function App() {
             const merged: PlayerProgress = {
               ...DEFAULT_PROGRESS,
               ...cloudData,
+              plotLevel: cloudData.plotLevel ?? DEFAULT_PROGRESS.plotLevel,
+              authorizedBuilders: cloudData.authorizedBuilders ?? DEFAULT_PROGRESS.authorizedBuilders,
               isLoggedIn: true,
               username: cloudData.username || user.displayName || 'Guardián Místico',
               avatarUrl: user.photoURL || '',
@@ -171,6 +176,8 @@ export default function App() {
               },
               craftedItems: parsed.craftedItems || DEFAULT_PROGRESS.craftedItems,
               houseDecorations: parsed.houseDecorations || DEFAULT_PROGRESS.houseDecorations,
+              plotLevel: parsed.plotLevel ?? DEFAULT_PROGRESS.plotLevel,
+              authorizedBuilders: parsed.authorizedBuilders ?? DEFAULT_PROGRESS.authorizedBuilders,
             };
             setProgress(merged);
             if (parsed.username) {
@@ -338,14 +345,48 @@ export default function App() {
     if (progress.phase >= 5) return;
     const nextPhase = progress.phase + 1;
     
-    // Deduct exp
+    // Determine dominant emotion to pick the evolution species name and theme
+    const dominant = getDominantOfProgress(progress).name;
+    
+    const matrix: Record<string, string[]> = {
+      Ira: ["Orit", "Kiskis", "Lahavio", "Serafok", "Aryehur", "Keteresh"],
+      Tristeza: ["Orit", "Dimdúm", "Mayimay", "Tzfardéa", "Axolotéa", "Tehomdim"],
+      Confianza: ["Orit", "Pitzpúz", "Deshúsh", "Netzerón", "Ilaná", "Etzchay"],
+      Amor: ["Orit", "Tzipor", "Tzip-tzip", "Ofira", "Ahaviel", "Ruchama"],
+      Alegría: ["Orit", "Simchí", "Simhaór", "Gilgál", "Sasoniel", "Onegdaat"],
+      Miedo: ["Orit", "Pachdán", "Eimá", "Arutzá", "Yiráh", "Choshechru"],
+      Sorpresa: ["Orit", "Peletz", "Temaház", "Shaashuá", "Mofetiel", "Da’atpele"],
+      Orgullo: ["Orit", "Gaavgeút", "Kavodí", "Hodgá", "Gaavakav", "Keterkav"],
+      Serenidad: ["Orit", "Shalómnu", "Menuchá", "Shalemá", "Shalomiel", "Ruachshalem"],
+    };
+
+    const list = matrix[dominant] || matrix["Alegría"];
+    const nextName = list[nextPhase] || list[list.length - 1];
+
+    // Determine the color theme
+    let nextTheme = progress.avatar.colorTheme;
+    if (dominant === 'Alegría' || dominant === 'Amor') {
+      nextTheme = 'solstice';
+    } else if (dominant === 'Ira' || dominant === 'Orgullo') {
+      nextTheme = 'primeval';
+    } else if (dominant === 'Miedo' || dominant === 'Tristeza') {
+      nextTheme = 'abyssal';
+    } else {
+      nextTheme = 'classic';
+    }
+
     const updated: PlayerProgress = {
       ...progress,
       phase: nextPhase,
-      exp: Math.max(0, progress.exp - progress.phase * 40)
+      exp: Math.max(0, progress.exp - progress.phase * 40),
+      avatar: {
+        ...progress.avatar,
+        name: nextName,
+        colorTheme: nextTheme
+      }
     };
     saveProgress(updated);
-    triggerNotification(`¡Tu Nitz ha mutado con éxito a la FASE ${nextPhase}!`);
+    triggerNotification(`🌟 ¡Tu companion evoluciona a FASE ${nextPhase}: [${nextName}]!`);
   };
 
   const handleResetProgress = async () => {

@@ -59,12 +59,17 @@ function createDetailedNitzMesh(
   else if (avatar.colorTheme === 'primeval') nColor = 0xef4444;
 
   // 1. Body
+  const hasMetallic = avatar.traits?.includes('Escamas Metálicas');
   const bodyGeometry = new THREE.SphereGeometry(1.2, 24, 24);
   const bodyMaterial = new THREE.MeshPhongMaterial({
     color: 0xf5f8ff,
     emissive: 0x111422,
-    shininess: 90,
+    shininess: hasMetallic ? 150 : 90,
   });
+  if (hasMetallic) {
+    (bodyMaterial as any).metalness = 0.9;
+    (bodyMaterial as any).roughness = 0.1;
+  }
   const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
   bodyMesh.castShadow = true;
   bodyMesh.receiveShadow = true;
@@ -86,8 +91,11 @@ function createDetailedNitzMesh(
   eyesGroup.add(leftEyeSocket, rightEyeSocket);
 
   // Pupils (dynamically colored by emotion/theme)
+  const hasGlowingEyes = avatar.traits?.includes('Ojos Rutilantes');
   const pupilGeo = new THREE.SphereGeometry(0.08, 12, 12);
-  const pupilMat = new THREE.MeshBasicMaterial({ color: nColor });
+  const pupilMat = hasGlowingEyes 
+    ? new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 })
+    : new THREE.MeshBasicMaterial({ color: nColor });
   const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
   leftPupil.position.set(-0.45, 0, 0.18);
   leftPupil.scale.set(1.1, 1.3, 0.4);
@@ -185,12 +193,23 @@ function createDetailedNitzMesh(
     crownMesh.visible = false;
   }
 
+  // Chaos Horn trait
+  if (avatar.traits?.includes('Cuerno del Caos')) {
+    const hornGeo = new THREE.ConeGeometry(0.2, 0.8, 16);
+    const hornMat = new THREE.MeshPhongMaterial({ color: 0xffaa00, emissive: 0x5a4500, shininess: 150 });
+    const hornMesh = new THREE.Mesh(hornGeo, hornMat);
+    hornMesh.position.set(0, 1.2, 0.8);
+    hornMesh.rotation.x = Math.PI / 3;
+    group.add(hornMesh);
+  }
+
   // 6. Aura Outer Shell
-  const auraGeo = new THREE.SphereGeometry(1.8, 24, 24);
+  const hasFieryAura = avatar.traits?.includes('Aura Ígnea');
+  const auraGeo = new THREE.SphereGeometry(hasFieryAura ? 2.0 : 1.8, 24, 24);
   const auraMat = new THREE.MeshBasicMaterial({
-    color: nColor,
+    color: hasFieryAura ? 0xff0000 : nColor,
     transparent: true,
-    opacity: 0.15,
+    opacity: hasFieryAura ? 0.25 : 0.15,
     side: THREE.BackSide,
   });
   const auraMesh = new THREE.Mesh(auraGeo, auraMat);
@@ -345,6 +364,7 @@ export function FirstPersonWorld({
 
   // UI feedback notifications
   const [notification, setNotification] = useState<string | null>(null);
+  const [isProximityChatActive, setIsProximityChatActive] = useState<boolean>(false);
 
   // Input controller states
   const [keys, setKeys] = useState<{ [key: string]: boolean }>({});
@@ -451,6 +471,13 @@ export function FirstPersonWorld({
     activeOverlayRef.current = activeOverlay;
   }, [activeOverlay]);
 
+  const progressRef = useRef(progress);
+  const onSaveProgressRef = useRef(onSaveProgress);
+  useEffect(() => {
+    progressRef.current = progress;
+    onSaveProgressRef.current = onSaveProgress;
+  }, [progress, onSaveProgress]);
+
   const handleInteractNearNodeRef = useRef<() => void>(() => {});
 
   // Elements references for Three.js
@@ -478,9 +505,30 @@ export function FirstPersonWorld({
         }
       }
 
-      // If user presses E, trigger interaction
-      if ((e.key === 'e' || e.key === 'E') && activeOverlayRef.current === 'none') {
+      // If user presses F, trigger interaction
+      if ((e.key === 'f' || e.key === 'F') && activeOverlayRef.current === 'none') {
         handleInteractNearNodeRef.current();
+      }
+
+      // If user presses E, toggle Nitz summon state
+      if ((e.key === 'e' || e.key === 'E') && activeOverlayRef.current === 'none') {
+        const nextSummoned = !progressRef.current.companionSummoned;
+        onSaveProgressRef.current({
+          ...progressRef.current,
+          companionSummoned: nextSummoned
+        });
+        if (auth.currentUser) {
+          const userRef = doc(db, 'users', auth.currentUser.uid);
+          updateDoc(userRef, {
+            companionSummoned: nextSummoned
+          }).catch(err => console.error("Error updating summon status in DB:", err));
+        }
+        triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
+      }
+
+      // If user presses V, activate proximity voice chat
+      if ((e.key === 'v' || e.key === 'V') && activeOverlayRef.current === 'none') {
+        setIsProximityChatActive(true);
       }
     };
 
@@ -489,6 +537,10 @@ export function FirstPersonWorld({
       keysDownRef.current[k] = false;
       keysRef.current[k] = false;
       setKeys({ ...keysDownRef.current });
+
+      if (e.key === 'v' || e.key === 'V') {
+        setIsProximityChatActive(false);
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -2512,6 +2564,14 @@ export function FirstPersonWorld({
           })}
         </div>
         
+        {/* Proximity Chat Transmission Indicator */}
+        {isProximityChatActive && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 bg-[#0f1d1a] border border-emerald-500/40 px-5 py-2.5 rounded-full text-xs font-bold text-emerald-400 shadow-2xl flex items-center gap-2 animate-pulse">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-ping mr-1" />
+            <span>🎙️ CHAT DE PROXIMIDAD ACTIVO (Presionando V)</span>
+          </div>
+        )}
+
         {/* Float interactive notification panel overlay */}
         {notification && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2 z-30 bg-[#121528] border border-tertiary/40 px-5 py-2.5 rounded-full text-xs font-bold text-[#dec1ac] shadow-2xl flex items-center gap-2 animate-bounce">
@@ -2561,8 +2621,16 @@ export function FirstPersonWorld({
               className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs px-4 py-1.5 rounded-md shadow flex items-center gap-1"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Pulsa [E] o CLIC para Activar</span>
+              <span>Pulsa [F] o CLIC para Activar</span>
             </button>
+          </div>
+        )}
+
+        {/* Proximity Chat HUD Overlay */}
+        {isProximityChatActive && (
+          <div className="absolute top-24 left-1/2 transform -translate-x-1/2 z-30 bg-emerald-500/20 border border-emerald-400/50 rounded-full px-6 py-2 backdrop-blur-md flex items-center gap-2 animate-pulse pointer-events-none">
+            <span className="text-xl">🎙️</span>
+            <span className="text-emerald-400 font-bold text-xs uppercase tracking-widest">Transmitiendo voz en proximidad...</span>
           </div>
         )}
 
