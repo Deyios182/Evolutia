@@ -17,6 +17,7 @@ interface MyHomeProps {
   onUpdateEmotions: (updater: (prev: EmotionVector) => EmotionVector) => void;
   onEvolve: () => void;
   onSpendGold: (amount: number, expGained: number) => boolean;
+  onOpenVoice?: () => void;
 }
 
 export const MyHome: React.FC<MyHomeProps> = ({
@@ -24,6 +25,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
   onUpdateEmotions,
   onEvolve,
   onSpendGold,
+  onOpenVoice,
 }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
@@ -422,10 +424,10 @@ export const MyHome: React.FC<MyHomeProps> = ({
               Estado: {dominantName}
             </span>
             <button 
-              onClick={() => setIsCallActive(true)}
-              className="bg-emerald-500/20 hover:bg-emerald-500/40 text-emerald-300 border border-emerald-400/30 text-[10px] px-3 py-1 rounded-md transition-all font-bold tracking-widest"
+              onClick={() => onOpenVoice ? onOpenVoice() : setIsCallActive(true)}
+              className="bg-cyan-500/20 hover:bg-cyan-500/40 text-cyan-300 border border-cyan-400/30 text-[10px] px-3 py-1 rounded-md transition-all font-bold tracking-widest animate-pulse"
             >
-              📞 Llamada Astral
+              🎙️ Conexión Neural Gemini
             </button>
           </div>
         </div>

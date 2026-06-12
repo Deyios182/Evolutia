@@ -250,6 +250,7 @@ import { Crafting } from './Crafting';
 import { Vecindario } from './Vecindario';
 import { StashUI } from './StashUI';
 import { WorkbenchUI } from './WorkbenchUI';
+import { GeminiLiveChat } from './GeminiLiveChat';
 
 interface FirstPersonWorldProps {
   progress: PlayerProgress;
@@ -307,7 +308,8 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench'>('none');
+  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice';
+  const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
 
   // Multi-player states
@@ -3222,6 +3224,14 @@ export function FirstPersonWorld({
                   onUpdateEmotions={onUpdateEmotions}
                   onEvolve={onEvolve}
                   onSpendGold={onSpendGold}
+                  onOpenVoice={() => setActiveOverlay('gemini_voice')}
+                />
+              )}
+
+              {activeOverlay === 'gemini_voice' && (
+                <GeminiLiveChat 
+                  progress={progress}
+                  onClose={() => setActiveOverlay('interactive_pet_chat')}
                 />
               )}
 
