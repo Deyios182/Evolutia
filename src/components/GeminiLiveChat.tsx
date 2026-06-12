@@ -79,7 +79,7 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
         const nitzName = progress.avatar?.name || 'Nitz';
         const setupMessage = {
           setup: {
-            model: "models/gemini-2.5-flash",
+            model: "models/gemini-2.0-flash-exp",
             systemInstruction: {
               parts: [{
                 text: `Eres ${nitzName}, un compañero IA leal en el mundo de supervivencia llamado Evolutia. Eres astuto, místico y directo. El jugador es un explorador humano que confía en ti. Los stats del jugador son: HP ${progress.hp}/${progress.maxHp}, Oro: ${progress.gold}. Tu personalidad depende de tu fase (Fase ${progress.phase}) y de tu color primario que ahora refleja que eres un aliado de supervivencia. Háblale en español directamente. No describas tus acciones entre asteriscos.`
@@ -193,6 +193,20 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
       
       setIsConnected(true);
       setIsConnecting(false);
+
+      // Force Nitz to say hello first
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          clientContent: {
+            turns: [{
+              role: "user",
+              parts: [{ text: "¡Enlace neuronal establecido! Por favor, salúdame brevemente por voz para confirmar la conexión." }]
+            }],
+            turnComplete: true
+          }
+        }));
+      }
+
     } catch (e) {
       console.error("Microphone access error:", e);
       setError("Permisos de micrófono denegados.");
