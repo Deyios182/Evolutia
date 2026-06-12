@@ -192,6 +192,77 @@ export function FirstPersonWorld({
     activeNodesRef.current = activeNodes;
   }, [activeNodes]);
 
+  // Mobile touch support detection
+  const [isMobile, setIsMobile] = useState<boolean>(false);
+  useEffect(() => {
+    const detectMobile = () => {
+      const hasTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+      const isSmall = window.innerWidth <= 768;
+      setIsMobile(hasTouch || isSmall);
+    };
+    detectMobile();
+    window.addEventListener('resize', detectMobile);
+    return () => window.removeEventListener('resize', detectMobile);
+  }, []);
+
+  // Mobile virtual joystick state
+  const [joystickPos, setJoystickPos] = useState({ x: 0, y: 0 });
+  const joystickStartRef = useRef({ x: 0, y: 0 });
+  const [isJoystickActive, setIsJoystickActive] = useState(false);
+
+  const handleJoystickStart = (e: React.TouchEvent) => {
+    if (e.touches.length > 0) {
+      const t = e.touches[0];
+      joystickStartRef.current = { x: t.clientX, y: t.clientY };
+      setIsJoystickActive(true);
+    }
+  };
+
+  const handleJoystickMove = (e: React.TouchEvent) => {
+    if (!isJoystickActive || e.touches.length === 0) return;
+    const t = e.touches[0];
+    const dx = t.clientX - joystickStartRef.current.x;
+    const dy = t.clientY - joystickStartRef.current.y;
+
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    const maxRadius = 40;
+    let nx = dx;
+    let ny = dy;
+
+    if (dist > maxRadius) {
+      nx = (dx / dist) * maxRadius;
+      ny = (dy / dist) * maxRadius;
+    }
+
+    setJoystickPos({ x: nx, y: ny });
+
+    // Threshold of 0.25 to trigger virtual keys
+    const ndx = nx / maxRadius;
+    const ndy = ny / maxRadius;
+
+    keysRef.current['w'] = ndy < -0.25;
+    keysRef.current['s'] = ndy > 0.25;
+    keysRef.current['a'] = ndx < -0.25;
+    keysRef.current['d'] = ndx > 0.25;
+  };
+
+  const handleJoystickEnd = () => {
+    setIsJoystickActive(false);
+    setJoystickPos({ x: 0, y: 0 });
+    keysRef.current['w'] = false;
+    keysRef.current['s'] = false;
+    keysRef.current['a'] = false;
+    keysRef.current['d'] = false;
+  };
+
+  // Active overlay and interaction references for keydown listener
+  const activeOverlayRef = useRef(activeOverlay);
+  useEffect(() => {
+    activeOverlayRef.current = activeOverlay;
+  }, [activeOverlay]);
+
+  const handleInteractNearNodeRef = useRef<() => void>(() => {});
+
   // Elements references for Three.js
   const mountRef = useRef<HTMLDivElement | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
@@ -215,6 +286,11 @@ export function FirstPersonWorld({
         if (document.pointerLockElement) {
           document.exitPointerLock();
         }
+      }
+
+      // If user presses E, trigger interaction
+      if ((e.key === 'e' || e.key === 'E') && activeOverlayRef.current === 'none') {
+        handleInteractNearNodeRef.current();
       }
     };
 
@@ -958,6 +1034,18 @@ export function FirstPersonWorld({
       try {
         renderer.domElement.requestPointerLock();
       } catch (_) {}
+
+      // Request fullscreen on user click gesture
+      try {
+        const docEl = document.documentElement;
+        if (!document.fullscreenElement) {
+          if (docEl.requestFullscreen) docEl.requestFullscreen();
+          else if ((docEl as any).webkitRequestFullscreen) (docEl as any).webkitRequestFullscreen();
+          else if ((docEl as any).mozRequestFullScreen) (docEl as any).mozRequestFullScreen();
+          else if ((docEl as any).msRequestFullscreen) (docEl as any).msRequestFullscreen();
+        }
+      } catch (_) {}
+
       isDragging = true;
       prevMouseX = e.clientX;
       prevMouseY = e.clientY;
@@ -986,10 +1074,56 @@ export function FirstPersonWorld({
       isDragging = false;
     };
 
+    // Support touch drag to look around on mobile
+    let prevTouchX = 0;
+    let prevTouchY = 0;
+    let isTouchLooking = false;
+
+    const handleTouchStart = (e: TouchEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('.joystick-container') || target.closest('.mobile-btn')) return;
+
+      // Request fullscreen on user touch gesture
+      try {
+        const docEl = document.documentElement;
+        if (!document.fullscreenElement) {
+          if (docEl.requestFullscreen) docEl.requestFullscreen();
+          else if ((docEl as any).webkitRequestFullscreen) (docEl as any).webkitRequestFullscreen();
+          else if ((docEl as any).mozRequestFullScreen) (docEl as any).mozRequestFullScreen();
+          else if ((docEl as any).msRequestFullscreen) (docEl as any).msRequestFullscreen();
+        }
+      } catch (_) {}
+
+      isTouchLooking = true;
+      if (e.touches.length > 0) {
+        prevTouchX = e.touches[0].clientX;
+        prevTouchY = e.touches[0].clientY;
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isTouchLooking || e.touches.length === 0) return;
+      const touch = e.touches[0];
+      const deltaX = touch.clientX - prevTouchX;
+      const deltaY = touch.clientY - prevTouchY;
+      prevTouchX = touch.clientX;
+      prevTouchY = touch.clientY;
+
+      setCameraAngle(prev => prev + deltaX * 0.006);
+      setCameraPitch(prev => Math.max(-0.6, Math.min(0.6, prev - deltaY * 0.006)));
+    };
+
+    const handleTouchEnd = () => {
+      isTouchLooking = false;
+    };
+
     const dom = renderer.domElement;
     dom.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
+    dom.addEventListener('touchstart', handleTouchStart, { passive: true });
+    dom.addEventListener('touchmove', handleTouchMove, { passive: true });
+    dom.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     // Animation frames loop
     let animId = 0;
@@ -1216,6 +1350,9 @@ export function FirstPersonWorld({
       dom.removeEventListener('mousedown', handleMouseDown);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
+      dom.removeEventListener('touchstart', handleTouchStart);
+      dom.removeEventListener('touchmove', handleTouchMove);
+      dom.removeEventListener('touchend', handleTouchEnd);
       
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
@@ -1488,6 +1625,7 @@ export function FirstPersonWorld({
       }));
     }
   };
+  handleInteractNearNodeRef.current = handleInteractNearNode;
 
   // Launch PvP Duel vs other active player in Map 3 (Zona Roja)
   const handleLaunchPvPDuel = async (rival: OnlinePlayer) => {
@@ -2101,7 +2239,7 @@ export function FirstPersonWorld({
               className="bg-gradient-to-r from-emerald-600 to-emerald-500 hover:from-emerald-500 hover:to-emerald-400 text-white font-bold text-xs px-4 py-1.5 rounded-md shadow flex items-center gap-1"
             >
               <Play className="w-3.5 h-3.5 fill-current" />
-              <span>Pulsa [ENTER] o CLIC para Activar</span>
+              <span>Pulsa [E] o CLIC para Activar</span>
             </button>
           </div>
         )}
@@ -2163,45 +2301,99 @@ export function FirstPersonWorld({
           </div>
         )}
 
-        {/* Directional Pointer Keyboard & Touch panel hud helpers */}
-        <div className="absolute left-6 bottom-6 z-20 flex flex-col items-center gap-1.5 bg-black/60 p-2.5 rounded-xl border border-white/10 backdrop-blur pointer-events-auto">
-          <span className="text-[8px] uppercase text-gray-400 block font-mono">Consola Guía</span>
-          <div className="flex gap-1.5">
-            <div className="w-8" />
-            <button 
-              onClick={() => triggerMovementButton('forward')} 
-              className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
-              title="Avanzar [W]"
-            >
-              <ArrowUp className="w-4 h-4" />
-            </button>
-            <div className="w-8" />
+        {/* Directional Pointer Keyboard & Touch panel hud helpers (Only on Desktop) */}
+        {!isMobile && (
+          <div className="absolute left-6 bottom-6 z-20 flex flex-col items-center gap-1.5 bg-black/60 p-2.5 rounded-xl border border-white/10 backdrop-blur pointer-events-auto">
+            <span className="text-[8px] uppercase text-gray-400 block font-mono">Consola Guía</span>
+            <div className="flex gap-1.5">
+              <div className="w-8" />
+              <button 
+                onClick={() => triggerMovementButton('forward')} 
+                className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
+                title="Avanzar [W]"
+              >
+                <ArrowUp className="w-4 h-4" />
+              </button>
+              <div className="w-8" />
+            </div>
+            <div className="flex gap-1.5">
+              <button 
+                onClick={() => triggerRotationButton('left')} 
+                className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
+                title="Rotar Izquierda [Girar]"
+              >
+                <ArrowLeft className="w-4 h-4 text-amber-300" />
+              </button>
+              <button 
+                onClick={() => triggerMovementButton('backward')} 
+                className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
+                title="Retroceder [S]"
+              >
+                <ArrowDown className="w-4 h-4" />
+              </button>
+              <button 
+                onClick={() => triggerRotationButton('right')} 
+                className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
+                title="Rotar Derecha [Girar]"
+              >
+                <ArrowRight className="w-4 h-4 text-amber-300" />
+              </button>
+            </div>
+            <span className="text-[7.5px] text-gray-500 font-mono tracking-wide -mb-1 mt-0.5">O usa WASD/Teclado</span>
           </div>
-          <div className="flex gap-1.5">
-            <button 
-              onClick={() => triggerRotationButton('left')} 
-              className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
-              title="Rotar Izquierda [Girar]"
+        )}
+
+        {/* Floating Mobile Virtual Joystick and Action Buttons */}
+        {isMobile && (
+          <>
+            {/* Joystick Zone (Left side) */}
+            <div 
+              className="absolute left-8 bottom-8 z-30 w-32 h-32 bg-black/60 border border-white/15 rounded-full flex items-center justify-center joystick-container touch-none select-none pointer-events-auto backdrop-blur-sm"
+              onTouchStart={handleJoystickStart}
+              onTouchMove={handleJoystickMove}
+              onTouchEnd={handleJoystickEnd}
             >
-              <ArrowLeft className="w-4 h-4 text-amber-300" />
-            </button>
-            <button 
-              onClick={() => triggerMovementButton('backward')} 
-              className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
-              title="Retroceder [S]"
-            >
-              <ArrowDown className="w-4 h-4" />
-            </button>
-            <button 
-              onClick={() => triggerRotationButton('right')} 
-              className="w-9 h-9 bg-white/10 hover:bg-white/20 active:scale-90 flex items-center justify-center text-white border border-white/5 rounded-lg font-bold"
-              title="Rotar Derecha [Girar]"
-            >
-              <ArrowRight className="w-4 h-4 text-amber-300" />
-            </button>
-          </div>
-          <span className="text-[7.5px] text-gray-500 font-mono tracking-wide -mb-1 mt-0.5">O usa WASD/Teclado</span>
-        </div>
+              <div className="absolute inset-2 border border-white/5 rounded-full pointer-events-none" />
+              <div 
+                className="w-14 h-14 bg-gradient-to-br from-tertiary to-amber-600 border border-white/30 rounded-full shadow-2xl flex items-center justify-center active:brightness-110"
+                style={{
+                  transform: `translate(${joystickPos.x}px, ${joystickPos.y}px)`,
+                  transition: isJoystickActive ? 'none' : 'transform 0.15s ease-out'
+                }}
+              >
+                <div className="w-3.5 h-3.5 bg-white/40 rounded-full" />
+              </div>
+            </div>
+
+            {/* Mobile Action Buttons (Right side) */}
+            <div className="absolute right-8 bottom-8 z-30 flex items-center gap-4 select-none touch-none pointer-events-auto">
+              {/* Contextual Action Button */}
+              {nearNode && (
+                <button
+                  onTouchStart={() => handleInteractNearNodeRef.current()}
+                  className="mobile-btn w-16 h-16 rounded-full bg-gradient-to-br from-emerald-600 to-emerald-500 border border-emerald-400/50 text-white font-extrabold text-[10px] shadow-2xl flex flex-col items-center justify-center active:scale-90 uppercase tracking-widest leading-none gap-0.5"
+                >
+                  <Play className="w-4 h-4 fill-current mb-0.5" />
+                  Acción
+                </button>
+              )}
+
+              {/* Jump Button */}
+              <button
+                onTouchStart={() => {
+                  if (!isJumpingRef.current) {
+                    velocityYRef.current = 6.0;
+                    isJumpingRef.current = true;
+                  }
+                }}
+                className="mobile-btn w-16 h-16 rounded-full bg-gradient-to-br from-cyan-600 to-cyan-500 border border-cyan-400/50 text-white font-extrabold text-[10px] shadow-2xl flex flex-col items-center justify-center active:scale-90 uppercase tracking-widest leading-none gap-0.5"
+              >
+                <ArrowUp className="w-4 h-4 mb-0.5" />
+                Saltar
+              </button>
+            </div>
+          </>
+        )}
 
         {/* Interactive action instructions indicator */}
         <div className="absolute right-6 bottom-6 z-20 bg-black/75 p-3 rounded-xl border border-white/10 max-w-xs text-xs space-y-1.5 backdrop-blur">
