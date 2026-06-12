@@ -63,6 +63,8 @@ interface OnlinePlayer {
   posZ?: number;
   facingAngle?: number;
   pvpEnabled?: boolean;
+  companionSummoned?: boolean;
+  activeNitzName?: string;
 }
 
 interface InteractiveNode3D {
@@ -91,6 +93,39 @@ export function FirstPersonWorld({
   const [playerZ, setPlayerZ] = useState<number>(5);
   const [cameraAngle, setCameraAngle] = useState<number>(0); // in radians
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
+
+  // Coordinate & Camera Refs for frame-rate independent physics
+  const playerXRef = useRef<number>(0);
+  const playerZRef = useRef<number>(5);
+  const cameraAngleRef = useRef<number>(0);
+  const cameraPitchRef = useRef<number>(0);
+  const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
+  const activeNodesRef = useRef<InteractiveNode3D[]>([]);
+
+  // Synchronize state changes to refs
+  useEffect(() => {
+    playerXRef.current = playerX;
+  }, [playerX]);
+
+  useEffect(() => {
+    playerZRef.current = playerZ;
+  }, [playerZ]);
+
+  useEffect(() => {
+    cameraAngleRef.current = cameraAngle;
+  }, [cameraAngle]);
+
+  useEffect(() => {
+    cameraPitchRef.current = cameraPitch;
+  }, [cameraPitch]);
+
+  useEffect(() => {
+    onlinePlayersRef.current = onlinePlayers;
+  }, [onlinePlayers]);
+
+  useEffect(() => {
+    activeNodesRef.current = activeNodes;
+  }, [activeNodes]);
 
   // Active overlay modal state
   const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating'>('none');
@@ -132,6 +167,25 @@ export function FirstPersonWorld({
   const [activeNodes, setActiveNodes] = useState<InteractiveNode3D[]>([]);
   const [nearNode, setNearNode] = useState<InteractiveNode3D | null>(null);
 
+  // Physics & FPS controls state
+  const playerYRef = useRef<number>(1.6);
+  const velocityYRef = useRef<number>(0);
+  const isJumpingRef = useRef<boolean>(false);
+  const keysRef = useRef<{ [key: string]: boolean }>({});
+  const [activeNitzIndex, setActiveNitzIndex] = useState<number>(0);
+
+  // Synchronize activeNitzIndex with progress.avatar.name
+  useEffect(() => {
+    const name = progress.avatar.name;
+    if (name === "Nitz Ígneo") {
+      setActiveNitzIndex(1);
+    } else if (name === "Nitz Abisal") {
+      setActiveNitzIndex(2);
+    } else {
+      setActiveNitzIndex(0);
+    }
+  }, [progress.avatar.name]);
+
   // UI feedback notifications
   const [notification, setNotification] = useState<string | null>(null);
 
@@ -153,12 +207,21 @@ export function FirstPersonWorld({
     const handleKeyDown = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       keysDownRef.current[k] = true;
+      keysRef.current[k] = true;
       setKeys({ ...keysDownRef.current });
+
+      // If user presses Control or Alt, release pointer lock
+      if (e.key === 'Control' || e.key === 'Alt') {
+        if (document.pointerLockElement) {
+          document.exitPointerLock();
+        }
+      }
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const k = e.key.toLowerCase();
       keysDownRef.current[k] = false;
+      keysRef.current[k] = false;
       setKeys({ ...keysDownRef.current });
     };
 
@@ -169,6 +232,15 @@ export function FirstPersonWorld({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, []);
+
+  // Exit pointer lock if overlay is active
+  useEffect(() => {
+    if (activeOverlay !== 'none') {
+      if (document.pointerLockElement) {
+        document.exitPointerLock();
+      }
+    }
+  }, [activeOverlay]);
 
   // Update notification helper
   const triggerNotification = (text: string) => {
@@ -363,7 +435,9 @@ export function FirstPersonWorld({
               posX: data.posX !== undefined ? parseFloat(data.posX) : 0,
               posZ: data.posZ !== undefined ? parseFloat(data.posZ) : 0,
               facingAngle: data.facingAngle !== undefined ? parseFloat(data.facingAngle) : 0,
-              pvpEnabled: data.pvpEnabled || false
+              pvpEnabled: data.pvpEnabled || false,
+              companionSummoned: data.companionSummoned || false,
+              activeNitzName: data.activeNitzName || data.avatar?.name || 'Nitz de Origen'
             });
           }
         }
@@ -390,6 +464,8 @@ export function FirstPersonWorld({
           posZ: parseFloat(playerZ.toFixed(2)),
           facingAngle: parseFloat(cameraAngle.toFixed(2)),
           pvpEnabled: pvpEnabled,
+          companionSummoned: progress.companionSummoned || false,
+          activeNitzName: progress.avatar.name || 'Nitz de Origen',
           lastActive: new Date().toISOString()
         });
       } catch (err) {
@@ -398,7 +474,7 @@ export function FirstPersonWorld({
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled]);
+  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name]);
 
   // Listen for PvP duel challenges and state updates
   useEffect(() => {
@@ -826,37 +902,24 @@ export function FirstPersonWorld({
       }
     });
 
-    // Populate actual active online peers in the same room inside 3D space
-    const peerMeshes: { id: string; mesh: THREE.Mesh }[] = [];
-    onlinePlayers.forEach(peer => {
-      if (peer.currentMap === currentMap) {
-        // Render peer as a gorgeous floating diamond
-        const peerGeo = new THREE.OctahedronGeometry(0.8, 0);
-        const colorsDict: Record<EmotionName, number> = {
-          Ira: 0xef4444, Miedo: 0xa855f7, Tristeza: 0x3b82f6, Alegría: 0xfacc15,
-          Confianza: 0x4ade80, Sorpresa: 0xf472b6, Amor: 0xf43f5e, Orgullo: 0xf97316, Serenidad: 0x22d3ee
-        };
-        const col = colorsDict[peer.dominantEmotion] || 0xffffff;
-        const peerMat = new THREE.MeshStandardMaterial({
-          color: col,
-          emissive: col,
-          emissiveIntensity: 0.5,
-          roughness: 0.1,
-          metalness: 0.8
-        });
-        const mesh = new THREE.Mesh(peerGeo, peerMat);
-        mesh.position.set(peer.posX || 0, 1.2, peer.posZ || 0);
-        scene.add(mesh);
-        peerMeshes.push({ id: peer.id, mesh });
-      }
-    });
+    // Define colors dictionary for emotion mappings
+    const colorsDict: Record<EmotionName, number> = {
+      Ira: 0xef4444, Miedo: 0xa855f7, Tristeza: 0x3b82f6, Alegría: 0xfacc15,
+      Confianza: 0x4ade80, Sorpresa: 0xf472b6, Amor: 0xf43f5e, Orgullo: 0xf97316, Serenidad: 0x22d3ee
+    };
+
+    // Populate actual online peers dynamically in tick loop via onlinePlayersRef to prevent scene re-creation
+    const peerMeshes: { id: string; mesh: THREE.Mesh; companionMesh?: THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
 
     // Render Summoned Nitz Companion in open maps
     let companionMesh: THREE.Mesh | null = null;
     let companionRing: THREE.Mesh | null = null;
     if (progress.companionSummoned && currentMap !== 'cabin') {
       const nitzGeo = new THREE.SphereGeometry(0.45, 16, 16);
-      const nCol = currentDominant.colorHex;
+      let nCol = currentDominant.colorHex;
+      if (progress.avatar.name === "Nitz Ígneo") nCol = 0xef4444; // Fire Red
+      else if (progress.avatar.name === "Nitz Abisal") nCol = 0x8b5cf6; // Void Purple
+
       const nitzMat = new THREE.MeshStandardMaterial({
         color: nCol,
         roughness: 0.1,
@@ -974,10 +1037,159 @@ export function FirstPersonWorld({
         extractionShieldMesh.scale.set(scale, scale, scale);
       }
 
-      // Float other players' avatars
-      peerMeshes.forEach(pm => {
+      // 1. Manage peer meshes dynamically based on onlinePlayersRef.current to prevent scene tear-downs
+      const currentPeers = onlinePlayersRef.current.filter(p => p.currentMap === currentMap);
+
+      // Despawn peers that left or changed maps
+      for (let i = peerMeshes.length - 1; i >= 0; i--) {
+        const pm = peerMeshes[i];
+        const stillOnline = currentPeers.find(p => p.id === pm.id);
+        if (!stillOnline) {
+          scene.remove(pm.mesh);
+          if (pm.companionMesh) scene.remove(pm.companionMesh);
+          peerMeshes.splice(i, 1);
+          // Hide its nameplate
+          const el = document.getElementById(`nameplate-${pm.id}`);
+          if (el) el.style.display = 'none';
+        }
+      }
+
+      // Spawn or update peers in 3D
+      currentPeers.forEach(peer => {
+        let pm = peerMeshes.find(p => p.id === peer.id);
+        const col = colorsDict[peer.dominantEmotion] || 0xffffff;
+
+        if (!pm) {
+          // Render peer as a gorgeous floating octahedron
+          const peerGeo = new THREE.OctahedronGeometry(0.8, 0);
+          const peerMat = new THREE.MeshStandardMaterial({
+            color: col,
+            emissive: col,
+            emissiveIntensity: 0.5,
+            roughness: 0.1,
+            metalness: 0.8
+          });
+          const mesh = new THREE.Mesh(peerGeo, peerMat);
+          mesh.position.set(peer.posX || 0, 1.2, peer.posZ || 0);
+          scene.add(mesh);
+
+          // Render peer's companion Nitz if companionSummoned is true
+          let peerNitzMesh: THREE.Mesh | null = null;
+          if (peer.companionSummoned) {
+            const cGeo = new THREE.SphereGeometry(0.3, 12, 12);
+            let nCol = col;
+            if (peer.activeNitzName === "Nitz Ígneo") nCol = 0xef4444; // Fire Red
+            else if (peer.activeNitzName === "Nitz Abisal") nCol = 0x8b5cf6; // Void Purple
+
+            const cMat = new THREE.MeshStandardMaterial({
+              color: nCol,
+              emissive: nCol,
+              emissiveIntensity: 0.45,
+              roughness: 0.15
+            });
+            peerNitzMesh = new THREE.Mesh(cGeo, cMat);
+            peerNitzMesh.position.set((peer.posX || 0) + 0.8, 1.0, (peer.posZ || 0) - 0.8);
+            scene.add(peerNitzMesh);
+          }
+
+          pm = {
+            id: peer.id,
+            mesh,
+            companionMesh: peerNitzMesh,
+            activeNitzName: peer.activeNitzName,
+            companionSummoned: peer.companionSummoned
+          };
+          peerMeshes.push(pm);
+        } else {
+          // Update colors / presence of companion mesh dynamically if summoned state or type changed
+          if (pm.companionSummoned !== peer.companionSummoned || pm.activeNitzName !== peer.activeNitzName) {
+            if (pm.companionMesh) {
+              scene.remove(pm.companionMesh);
+              pm.companionMesh = null;
+            }
+            if (peer.companionSummoned) {
+              const cGeo = new THREE.SphereGeometry(0.3, 12, 12);
+              let nCol = col;
+              if (peer.activeNitzName === "Nitz Ígneo") nCol = 0xef4444;
+              else if (peer.activeNitzName === "Nitz Abisal") nCol = 0x8b5cf6;
+
+              const cMat = new THREE.MeshStandardMaterial({
+                color: nCol,
+                emissive: nCol,
+                emissiveIntensity: 0.45,
+                roughness: 0.15
+              });
+              pm.companionMesh = new THREE.Mesh(cGeo, cMat);
+              pm.companionMesh.position.copy(pm.mesh.position).add(new THREE.Vector3(0.8, -0.2, -0.8));
+              scene.add(pm.companionMesh);
+            }
+            pm.companionSummoned = peer.companionSummoned;
+            pm.activeNitzName = peer.activeNitzName;
+          }
+        }
+
+        // Smoothly interpolate (lerp) peer mesh position
+        const targetX = peer.posX || 0;
+        const targetZ = peer.posZ || 0;
+        pm.mesh.position.x += (targetX - pm.mesh.position.x) * 0.15;
+        pm.mesh.position.z += (targetZ - pm.mesh.position.z) * 0.15;
+        
+        // Float peer vertically
         pm.mesh.position.y = 1.2 + Math.sin(timer * 2.1 + pm.mesh.position.x) * 0.15;
-        pm.mesh.rotation.y += 0.02;
+        
+        // Lerp/apply facing angle
+        if (peer.facingAngle !== undefined) {
+          pm.mesh.rotation.y = peer.facingAngle;
+        } else {
+          pm.mesh.rotation.y += 0.02;
+        }
+
+        // Animate peer companion follow behavior trailing behind the peer mesh
+        if (pm.companionMesh) {
+          const angle = peer.facingAngle !== undefined ? peer.facingAngle : pm.mesh.rotation.y;
+          const compTargetX = pm.mesh.position.x - Math.sin(angle) * 1.1;
+          const compTargetZ = pm.mesh.position.z + Math.cos(angle) * 1.1;
+          const compTargetY = pm.mesh.position.y + Math.sin(timer * 3.0) * 0.12;
+
+          pm.companionMesh.position.x += (compTargetX - pm.companionMesh.position.x) * 0.1;
+          pm.companionMesh.position.z += (compTargetZ - pm.companionMesh.position.z) * 0.1;
+          pm.companionMesh.position.y += (compTargetY - pm.companionMesh.position.y) * 0.1;
+          
+          pm.companionMesh.rotation.y += 0.03;
+        }
+      });
+
+      // Project peer nameplates from 3D coordinates to 2D screen space
+      const tempV = new THREE.Vector3();
+      peerMeshes.forEach(pm => {
+        tempV.setFromMatrixPosition(pm.mesh.matrixWorld);
+        tempV.y += 1.25; // position nameplate slightly above the mesh
+        tempV.project(camera);
+
+        const el = document.getElementById(`nameplate-${pm.id}`);
+        if (el) {
+          const isBehind = tempV.z > 1;
+          if (isBehind) {
+            el.style.display = 'none';
+          } else {
+            const screenX = (tempV.x * 0.5 + 0.5) * width;
+            const screenY = (-(tempV.y * 0.5) + 0.5) * height;
+
+            el.style.display = 'flex';
+            el.style.left = `${screenX}px`;
+            el.style.top = `${screenY}px`;
+
+            // Adjust opacity dynamically based on distance to player camera
+            const dist = camera.position.distanceTo(pm.mesh.position);
+            const maxDist = 40;
+            if (dist > maxDist) {
+              el.style.opacity = '0';
+              el.style.pointerEvents = 'none';
+            } else {
+              el.style.opacity = String(1.0 - (dist / maxDist) * 0.65);
+            }
+          }
+        }
       });
 
       renderer.render(scene, camera);
@@ -1009,60 +1221,103 @@ export function FirstPersonWorld({
         mountRef.current.removeChild(renderer.domElement);
       }
     };
-  }, [currentMap, activeNodes, onlinePlayers, progress.companionSummoned, extractionActive]);
+  }, [currentMap, activeNodes, progress.companionSummoned, extractionActive, progress.avatar.name]);
 
   // Motion processing cycle (frame controller loops updating coordinates)
   useEffect(() => {
     let loopId = 0;
+    let lastTime = performance.now();
 
     const moveLoop = () => {
       loopId = requestAnimationFrame(moveLoop);
 
-      // Speed metrics
-      const speed = 0.025;
+      const now = performance.now();
+      let dt = (now - lastTime) / 1000; // delta time in seconds
+      lastTime = now;
+
+      // Cap delta time to prevent giant jumps (e.g. tab switches)
+      if (dt > 0.1) dt = 0.1;
+
+      // Speed metrics: 4.5 units per second base speed
+      const baseSpeed = 4.5;
+      const isRunning = keysRef.current['shift'];
+      const runMultiplier = 1.8;
+      const moveSpeed = baseSpeed * (isRunning ? runMultiplier : 1.0) * dt;
+
+      // Read values from refs to ensure frame-rate independence and prevent effect stutters
+      const angle = cameraAngleRef.current;
+      const pitch = cameraPitchRef.current;
+      const curX = playerXRef.current;
+      const curZ = playerZRef.current;
+
       let dx = 0;
       let dz = 0;
 
       // WASD / Arrow checks
-      if (keys['w'] || keys['arrowup']) {
-        dx += Math.sin(cameraAngle);
-        dz -= Math.cos(cameraAngle);
+      if (keysRef.current['w'] || keysRef.current['arrowup']) {
+        dx += Math.sin(angle);
+        dz -= Math.cos(angle);
       }
-      if (keys['s'] || keys['arrowdown']) {
-        dx -= Math.sin(cameraAngle);
-        dz += Math.cos(cameraAngle);
+      if (keysRef.current['s'] || keysRef.current['arrowdown']) {
+        dx -= Math.sin(angle);
+        dz += Math.cos(angle);
       }
-      if (keys['a'] || keys['arrowleft']) {
-        dx -= Math.cos(cameraAngle);
-        dz -= Math.sin(cameraAngle);
+      if (keysRef.current['a'] || keysRef.current['arrowleft']) {
+        dx -= Math.cos(angle);
+        dz -= Math.sin(angle);
       }
-      if (keys['d'] || keys['arrowright']) {
-        dx += Math.cos(cameraAngle);
-        dz += Math.sin(cameraAngle);
+      if (keysRef.current['d'] || keysRef.current['arrowright']) {
+        dx += Math.cos(angle);
+        dz += Math.sin(angle);
       }
 
       // Normalize movement vector to prevent diagonal speedup
       const length = Math.sqrt(dx * dx + dz * dz);
       if (length > 0) {
-        dx /= length;
-        dz /= length;
+        dx = (dx / length) * moveSpeed;
+        dz = (dz / length) * moveSpeed;
       }
 
       // Safe bound clamps
       let limitValue = 38;
       if (currentMap === 'cabin') limitValue = 5;
 
-      let nextX = Math.max(-limitValue, Math.min(limitValue, playerX + dx * speed));
-      let nextZ = Math.max(-limitValue, Math.min(limitValue, playerZ + dz * speed));
+      let nextX = Math.max(-limitValue, Math.min(limitValue, curX + dx));
+      let nextZ = Math.max(-limitValue, Math.min(limitValue, curZ + dz));
+
+      // JUMP PHYSICS (Space triggers jump)
+      const gravity = -18.0; // gravity acceleration
+      const jumpImpulse = 6.0; // upward jump impulse
+
+      if (keysRef.current[' '] && !isJumpingRef.current) {
+        velocityYRef.current = jumpImpulse;
+        isJumpingRef.current = true;
+      }
+
+      if (isJumpingRef.current) {
+        velocityYRef.current += gravity * dt;
+        playerYRef.current += velocityYRef.current * dt;
+
+        // Ground collision check
+        if (playerYRef.current <= 1.6) {
+          playerYRef.current = 1.6;
+          velocityYRef.current = 0;
+          isJumpingRef.current = false;
+        }
+      }
 
       // Calculate proximity to interactive nodes
       let foundNear: InteractiveNode3D | null = null;
-      activeNodes.forEach(node => {
+      activeNodesRef.current.forEach(node => {
         const dist = Math.sqrt(Math.pow(nextX - node.x, 2) + Math.pow(nextZ - node.z, 2));
         if (dist < 2.5) {
           foundNear = node;
         }
       });
+
+      // Update coordinate refs
+      playerXRef.current = nextX;
+      playerZRef.current = nextZ;
 
       setNearNode(foundNear);
       setPlayerX(nextX);
@@ -1070,19 +1325,19 @@ export function FirstPersonWorld({
 
       // Handle continuous camera view alignment
       if (cameraRef.current) {
-        cameraRef.current.position.set(nextX, 1.6, nextZ);
+        cameraRef.current.position.set(nextX, playerYRef.current, nextZ);
         
         // Pivot lookAt vector
-        const lookX = nextX + Math.sin(cameraAngle);
-        const lookZ = nextZ - Math.cos(cameraAngle);
-        const lookY = 1.6 + Math.sin(cameraPitch);
+        const lookX = nextX + Math.sin(angle);
+        const lookZ = nextZ - Math.cos(angle);
+        const lookY = playerYRef.current + Math.sin(pitch);
         cameraRef.current.lookAt(lookX, lookY, lookZ);
       }
     };
 
     moveLoop();
     return () => cancelAnimationFrame(loopId);
-  }, [keys, cameraAngle, cameraPitch, playerX, playerZ, activeNodes, currentMap]);
+  }, [currentMap]);
 
 
   // Virtual keyboard buttons triggers
@@ -1634,25 +1889,75 @@ export function FirstPersonWorld({
         <div className="flex items-center gap-3">
           {/* Summon/Dismiss Nitz Companion (Palworld style) */}
           {currentMap !== 'cabin' && (
-            <button
-              onClick={() => {
-                const nextSummoned = !progress.companionSummoned;
-                onSaveProgress({
-                  ...progress,
-                  companionSummoned: nextSummoned
-                });
-                triggerNotification(nextSummoned ? "🐾 ¡Nitz invocado! Te seguirá y te ayudará a recolectar recursos." : "🐾 Nitz regresó a descansar en tu cabaña.");
-              }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 uppercase ${
-                progress.companionSummoned 
-                  ? 'bg-amber-600 border border-amber-500 text-white animate-pulse' 
-                  : 'bg-black/50 border border-white/10 text-gray-400 hover:text-white'
-              }`}
-              title={progress.companionSummoned ? 'Desinvocar a tu compañero Nitz' : 'Invocar a tu compañero Nitz para ayudarte a recolectar'}
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>{progress.companionSummoned ? 'Nitz Invocado' : 'Invocar Nitz'}</span>
-            </button>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const nextSummoned = !progress.companionSummoned;
+                  onSaveProgress({
+                    ...progress,
+                    companionSummoned: nextSummoned
+                  });
+                  // Trigger an immediate Firestore update so peers see it without 1.5s delay
+                  if (auth.currentUser) {
+                    const userRef = doc(db, 'users', auth.currentUser.uid);
+                    updateDoc(userRef, {
+                      companionSummoned: nextSummoned
+                    }).catch(err => console.error("Error updating summon status in DB:", err));
+                  }
+                  triggerNotification(nextSummoned ? "🐾 ¡Nitz invocado! Te seguirá y te ayudará a recolectar recursos." : "🐾 Nitz regresó a descansar en tu cabaña.");
+                }}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 uppercase ${
+                  progress.companionSummoned 
+                    ? 'bg-amber-600 border border-amber-500 text-white animate-pulse' 
+                    : 'bg-black/50 border border-white/10 text-gray-400 hover:text-white'
+                }`}
+                title={progress.companionSummoned ? 'Desinvocar a tu compañero Nitz' : 'Invocar a tu compañero Nitz para ayudarte a recolectar'}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>{progress.companionSummoned ? 'Nitz Invocado' : 'Invocar Nitz'}</span>
+              </button>
+
+              {progress.companionSummoned && (
+                <button
+                  onClick={() => {
+                    const nextIndex = (activeNitzIndex + 1) % 3;
+                    setActiveNitzIndex(nextIndex);
+                    
+                    const names = ["Nitz de Origen", "Nitz Ígneo", "Nitz Abisal"];
+                    const themes: ("classic" | "solstice" | "abyssal")[] = ["classic", "solstice", "abyssal"];
+                    
+                    const chosenName = names[nextIndex];
+                    const chosenTheme = themes[nextIndex];
+                    
+                    onSaveProgress({
+                      ...progress,
+                      avatar: {
+                        ...progress.avatar,
+                        name: chosenName,
+                        colorTheme: chosenTheme
+                      }
+                    });
+
+                    // Trigger immediate Firestore update so peers see it without 1.5s delay
+                    if (auth.currentUser) {
+                      const userRef = doc(db, 'users', auth.currentUser.uid);
+                      updateDoc(userRef, {
+                        activeNitzName: chosenName,
+                        'avatar.name': chosenName,
+                        'avatar.colorTheme': chosenTheme
+                      }).catch(err => console.error("Error updating Nitz companion in DB:", err));
+                    }
+                    
+                    triggerNotification(`🔄 Has cambiado a: ${chosenName}`);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 bg-black/50 border border-white/10 text-gray-400 hover:text-white uppercase cursor-pointer"
+                  title="Intercambiar dinámicamente tu compañero Nitz"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>{progress.avatar.name || "Nitz de Origen"}</span>
+                </button>
+              )}
+            </div>
           )}
 
           {currentMap === 'map3' && (
@@ -1700,6 +2005,52 @@ export function FirstPersonWorld({
 
       {/* Primary 3D Space Canvas Viewport Container */}
       <div className="flex-1 w-full bg-slate-950 relative overflow-hidden flex" ref={mountRef}>
+        
+        {/* Dynamic HTML Nameplates overlay projected from 3D coords */}
+        <div className="absolute inset-0 pointer-events-none z-10 overflow-hidden">
+          {onlinePlayers.filter(p => p.currentMap === currentMap).map(peer => {
+            const colorsDictHex: Record<EmotionName, string> = {
+              Ira: '#ef4444', Miedo: '#a855f7', Tristeza: '#3b82f6', Alegría: '#facc15',
+              Confianza: '#4ade80', Sorpresa: '#f472b6', Amor: '#f43f5e', Orgullo: '#f97316', Serenidad: '#22d3ee'
+            };
+            const col = colorsDictHex[peer.dominantEmotion] || '#ffffff';
+            const emotionTitles: Record<EmotionName, string> = {
+              Ira: 'Guardián del Fuego',
+              Miedo: 'Buscador de Sombras',
+              Tristeza: 'Centinela de la Lluvia',
+              Alegría: 'Heraldo de la Luz',
+              Confianza: 'Protector de Almas',
+              Sorpresa: 'Explorador Astral',
+              Amor: 'Vinculador de Corazones',
+              Orgullo: 'Paladín Celestial',
+              Serenidad: 'Templario de la Calma'
+            };
+            const title = emotionTitles[peer.dominantEmotion] || 'Guardián Místico';
+            
+            return (
+              <div
+                key={peer.id}
+                id={`nameplate-${peer.id}`}
+                className="absolute -translate-x-1/2 -translate-y-full bg-black/85 border border-white/10 px-2.5 py-1 rounded-lg flex flex-col items-center gap-0.5 shadow-lg select-none text-center transition-opacity duration-150"
+                style={{
+                  display: 'none',
+                }}
+              >
+                <span className="text-xs font-extrabold font-mono tracking-wide" style={{ color: col }}>
+                  @{peer.username}
+                </span>
+                <span className="text-[8.5px] font-semibold text-[#dec1ac] uppercase tracking-wider">
+                  {title}
+                </span>
+                {peer.companionSummoned && (
+                  <span className="text-[7.5px] text-gray-400 font-mono italic">
+                    🐾 {peer.activeNitzName || 'Nitz de Origen'}
+                  </span>
+                )}
+              </div>
+            );
+          })}
+        </div>
         
         {/* Float interactive notification panel overlay */}
         {notification && (
