@@ -886,26 +886,37 @@ export function FirstPersonWorld({
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    // Viewport mouse dragging to rotate CAMERA
+    // Viewport mouse dragging or pointer-lock to rotate CAMERA
     let isDragging = false;
     let prevMouseX = 0;
     let prevMouseY = 0;
 
     const handleMouseDown = (e: MouseEvent) => {
+      try {
+        renderer.domElement.requestPointerLock();
+      } catch (_) {}
       isDragging = true;
       prevMouseX = e.clientX;
       prevMouseY = e.clientY;
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      if (!isDragging) return;
-      const deltaX = e.clientX - prevMouseX;
-      const deltaY = e.clientY - prevMouseY;
-      prevMouseX = e.clientX;
-      prevMouseY = e.clientY;
+      const isLocked = document.pointerLockElement === renderer.domElement;
+      if (isLocked) {
+        const deltaX = e.movementX;
+        const deltaY = e.movementY;
+        setCameraAngle(prev => prev - deltaX * 0.003);
+        setCameraPitch(prev => Math.max(-0.75, Math.min(0.75, prev - deltaY * 0.003)));
+      } else {
+        if (!isDragging) return;
+        const deltaX = e.clientX - prevMouseX;
+        const deltaY = e.clientY - prevMouseY;
+        prevMouseX = e.clientX;
+        prevMouseY = e.clientY;
 
-      setCameraAngle(prev => prev - deltaX * 0.0055);
-      setCameraPitch(prev => Math.max(-0.6, Math.min(0.6, prev - deltaY * 0.0055)));
+        setCameraAngle(prev => prev - deltaX * 0.0055);
+        setCameraPitch(prev => Math.max(-0.6, Math.min(0.6, prev - deltaY * 0.0055)));
+      }
     };
 
     const handleMouseUp = () => {
@@ -1008,7 +1019,7 @@ export function FirstPersonWorld({
       loopId = requestAnimationFrame(moveLoop);
 
       // Speed metrics
-      const speed = 0.16;
+      const speed = 0.07;
       let dx = 0;
       let dz = 0;
 
