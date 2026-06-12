@@ -249,6 +249,7 @@ import { Marketplace } from './Marketplace';
 import { Crafting } from './Crafting';
 import { Vecindario } from './Vecindario';
 import { StashUI } from './StashUI';
+import { WorkbenchUI } from './WorkbenchUI';
 
 interface FirstPersonWorldProps {
   progress: PlayerProgress;
@@ -283,7 +284,7 @@ interface InteractiveNode3D {
   name: string;
   x: number;
   z: number;
-  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash';
+  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash' | 'forge' | 'weaver' | 'enchanter';
   rarity?: 'common' | 'rare' | 'epic' | 'legendary';
   clicksRequired?: number;
   clicksCurrent?: number;
@@ -306,7 +307,8 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash'>('none');
+  const [activeOverlay, setActiveOverlay] = useState<'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench'>('none');
+  const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
 
   // Multi-player states
   const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([]);
@@ -378,6 +380,8 @@ export function FirstPersonWorld({
   const cameraPitchRef = useRef<number>(0);
   const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
   const activeNodesRef = useRef<InteractiveNode3D[]>([]);
+  const tempBagRef = useRef<GatheringInventory>(tempBag);
+  const maxWeightRef = useRef<number>(30);
 
   // Synchronize state changes to refs
   useEffect(() => {
@@ -403,6 +407,14 @@ export function FirstPersonWorld({
   useEffect(() => {
     activeNodesRef.current = activeNodes;
   }, [activeNodes]);
+
+  useEffect(() => {
+    tempBagRef.current = tempBag;
+  }, [tempBag]);
+
+  useEffect(() => {
+    maxWeightRef.current = progress.equipment?.backpack?.weightCapacity || 30;
+  }, [progress.equipment?.backpack?.weightCapacity]);
 
   // Mobile touch support detection
   const [isMobile, setIsMobile] = useState<boolean>(false);
@@ -1363,9 +1375,41 @@ export function FirstPersonWorld({
             osc.stop(audioCtx.currentTime + 0.2);
           } catch (_) {}
 
-          // Spawn Player Projectile/Strike
-          const pGeo = new THREE.SphereGeometry(0.2, 8, 8);
-          const pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+          // Spawn Player Projectile/Strike based on Equipped Weapon
+          const activeWep = progress.equipment?.mainHand?.subType;
+          
+          let pGeo: THREE.BufferGeometry;
+          let pMat: THREE.MeshBasicMaterial;
+          let speed = 15.0; // Base speed
+          let life = 60; // Base life
+
+          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') {
+            // Melee Slash
+            pGeo = new THREE.BoxGeometry(1.5, 0.1, 0.5);
+            pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            speed = 25.0;
+            life = 8; // Very short range for melee
+          } else if (activeWep === 'ranged') {
+            // Rifle Bullet
+            pGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8);
+            pGeo.rotateX(Math.PI / 2);
+            pMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // Gold bullet
+            speed = 45.0; // Very fast
+            life = 80;
+          } else if (activeWep === 'grimoire') {
+            // Magic Orb
+            pGeo = new THREE.SphereGeometry(0.5, 12, 12);
+            pMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 }); // Purple plasma
+            speed = 10.0; // Slow orb
+            life = 120;
+          } else {
+            // Default raw energy punch
+            pGeo = new THREE.SphereGeometry(0.2, 8, 8);
+            pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+            speed = 15.0;
+            life = 60;
+          }
+
           const pMesh = new THREE.Mesh(pGeo, pMat);
           
           pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
@@ -1374,14 +1418,20 @@ export function FirstPersonWorld({
           // Direction from camera
           const dir = new THREE.Vector3();
           camera.getWorldDirection(dir);
-          const speed = 15.0; // Projectile speed
+
+          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') {
+            // Rotate the melee slash to face the camera direction
+            pMesh.lookAt(pMesh.position.clone().add(dir));
+          } else if (activeWep === 'ranged') {
+            pMesh.lookAt(pMesh.position.clone().add(dir));
+          }
 
           activeProjectiles.push({
             mesh: pMesh,
             vx: dir.x * speed,
             vy: dir.y * speed,
             vz: dir.z * speed,
-            life: 60, // frames to live
+            life: life,
             isNitz: false
           });
         }
@@ -1909,12 +1959,22 @@ export function FirstPersonWorld({
       // Cap delta time to prevent giant jumps (e.g. tab switches)
       if (dt > 0.1) dt = 0.1;
 
+      // Weight penalty calculation
+      const tb = tempBagRef.current;
+      const cw = (tb.wood.common + tb.wood.rare + tb.wood.epic + tb.wood.legendary) * 1 +
+                 (tb.stone.common + tb.stone.rare + tb.stone.epic + tb.stone.legendary) * 2 +
+                 (tb.metal.common + tb.metal.rare + tb.metal.epic + tb.metal.legendary) * 3;
+      
+      let weightMultiplier = 1.0;
+      if (cw >= maxWeightRef.current) weightMultiplier = 0.4; // 60% speed reduction if full
+      else if (cw > maxWeightRef.current * 0.8) weightMultiplier = 0.7; // 30% reduction if heavy
+
       // Speed metrics: 4.5 units per second base speed
       const baseSpeed = 4.5;
       const isRunning = keysRef.current['shift'];
       const runMultiplier = 1.8;
       const dodgeMultiplier = isDodgingRef.current ? 4.0 : 1.0;
-      const moveSpeed = baseSpeed * (isRunning ? runMultiplier : 1.0) * dodgeMultiplier * dt;
+      const moveSpeed = baseSpeed * (isRunning ? runMultiplier : 1.0) * dodgeMultiplier * weightMultiplier * dt;
 
       // Read values from refs to ensure frame-rate independence and prevent effect stutters
       const angle = cameraAngleRef.current;
@@ -2083,8 +2143,15 @@ export function FirstPersonWorld({
       setActiveOverlay('marketplace');
     } else if (nearNode.type === 'stash') {
       setActiveOverlay('stash');
-    } else if (nearNode.type === 'anvil') {
-      setActiveOverlay('crafting');
+    } else if (nearNode.type === 'forge' || nearNode.type === 'anvil') {
+      setActiveWorkbenchType('forge');
+      setActiveOverlay('workbench');
+    } else if (nearNode.type === 'weaver') {
+      setActiveWorkbenchType('weaver');
+      setActiveOverlay('workbench');
+    } else if (nearNode.type === 'enchanter') {
+      setActiveWorkbenchType('enchanter');
+      setActiveOverlay('workbench');
     } else if (nearNode.type === 'bookshelf') {
       setActiveOverlay('codex');
     } else if (nearNode.type === 'nitz_npc') {
@@ -2139,6 +2206,17 @@ export function FirstPersonWorld({
           const req = n.clicksRequired || 4;
 
           if (nextClicks >= req) {
+            
+            // Validate Weight Capacity
+            const cw = (tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 +
+                       (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 +
+                       (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3;
+            
+            if (cw >= maxWeightRef.current) {
+              triggerNotification("⚠️ MOCHILA LLENA: Capacidad máxima superada. Vacía tus bolsillos.");
+              return n; // Do not drop materials, keep node alive
+            }
+
             // Reward materials
             setTempBag(tb => {
               const b = { ...tb };
@@ -3116,6 +3194,15 @@ export function FirstPersonWorld({
                   progress={progress}
                   onSaveProgress={onSaveProgress}
                   onClose={() => setActiveOverlay('none')}
+                />
+              )}
+
+              {activeOverlay === 'workbench' && (
+                <WorkbenchUI 
+                  progress={progress}
+                  onSaveProgress={onSaveProgress}
+                  onClose={() => setActiveOverlay('none')}
+                  type={activeWorkbenchType}
                 />
               )}
 
