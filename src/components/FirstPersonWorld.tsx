@@ -3194,6 +3194,8 @@ export function FirstPersonWorld({
                   progress={progress}
                   onSaveProgress={onSaveProgress}
                   onClose={() => setActiveOverlay('none')}
+                  tempBag={tempBag}
+                  setTempBag={setTempBag}
                 />
               )}
 

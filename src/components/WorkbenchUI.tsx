@@ -79,26 +79,64 @@ export const WorkbenchUI: React.FC<WorkbenchUIProps> = ({ progress, onSaveProgre
     setTimeout(() => setNotification(null), 3000);
   };
 
+  const consumeFromGrid = (costWood: number, costStone: number, costMetal: number, costEssence: number = 0) => {
+    const grid = [...(progress.stashGrid || [])];
+    
+    // Calculate totals
+    let tWood = 0, tStone = 0, tMetal = 0, tEssence = 0;
+    grid.forEach(slot => {
+      if (slot && slot.type === 'material') {
+        if (slot.materialCategory === 'wood') tWood += (slot.quantity || 0);
+        if (slot.materialCategory === 'stone') tStone += (slot.quantity || 0);
+        if (slot.materialCategory === 'metal') tMetal += (slot.quantity || 0);
+        if (slot.materialCategory === 'essence') tEssence += (slot.quantity || 0);
+      }
+    });
+
+    if (tWood < costWood || tStone < costStone || tMetal < costMetal || tEssence < costEssence) {
+      return null;
+    }
+
+    // Consume
+    let remWood = costWood, remStone = costStone, remMetal = costMetal, remEssence = costEssence;
+    
+    for (let i = 0; i < grid.length; i++) {
+      const slot = grid[i];
+      if (slot && slot.type === 'material') {
+        let q = slot.quantity || 0;
+        if (slot.materialCategory === 'wood' && remWood > 0) {
+          const take = Math.min(q, remWood);
+          remWood -= take; q -= take;
+        } else if (slot.materialCategory === 'stone' && remStone > 0) {
+          const take = Math.min(q, remStone);
+          remStone -= take; q -= take;
+        } else if (slot.materialCategory === 'metal' && remMetal > 0) {
+          const take = Math.min(q, remMetal);
+          remMetal -= take; q -= take;
+        } else if (slot.materialCategory === 'essence' && remEssence > 0) {
+          const take = Math.min(q, remEssence);
+          remEssence -= take; q -= take;
+        }
+        
+        if (q <= 0) grid[i] = null;
+        else slot.quantity = q;
+      }
+    }
+    
+    return grid;
+  };
+
   const handleUpgrade = () => {
     if (wb.level >= maxLevel) return;
     
-    // Upgrade cost scaling
     const costWood = wb.level * 100;
     const costStone = wb.level * 100;
     const costMetal = wb.level * 50;
 
-    const inv = progress.inventory;
-    if (
-      inv.wood.common >= costWood &&
-      inv.stone.common >= costStone &&
-      inv.metal.common >= costMetal
-    ) {
-      const nextInv = { ...inv };
-      nextInv.wood.common -= costWood;
-      nextInv.stone.common -= costStone;
-      nextInv.metal.common -= costMetal;
-
-      const updates: any = { inventory: nextInv };
+    const newGrid = consumeFromGrid(costWood, costStone, costMetal);
+    
+    if (newGrid) {
+      const updates: any = { stashGrid: newGrid };
       if (type === 'forge') updates.workbenchForgeLevel = wb.level + 1;
       if (type === 'weaver') updates.workbenchWeaverLevel = wb.level + 1;
       if (type === 'enchanter') updates.workbenchEnchanterLevel = wb.level + 1;
@@ -106,7 +144,7 @@ export const WorkbenchUI: React.FC<WorkbenchUIProps> = ({ progress, onSaveProgre
       onSaveProgress({ ...progress, ...updates });
       showNotif(`¡${wb.name} mejorada a Nivel ${wb.level + 1}!`);
     } else {
-      showNotif("❌ Recursos insuficientes en el inventario permanente.");
+      showNotif("❌ Recursos insuficientes en tu Almacén Seguro (Grid).");
     }
   };
 
@@ -116,31 +154,20 @@ export const WorkbenchUI: React.FC<WorkbenchUIProps> = ({ progress, onSaveProgre
       return;
     }
 
-    const inv = progress.inventory;
-    if (
-      inv.wood.common >= recipe.cost.wood &&
-      inv.stone.common >= recipe.cost.stone &&
-      inv.metal.common >= recipe.cost.metal &&
-      inv.essence.common >= recipe.cost.essence
-    ) {
-      const nextInv = { ...inv };
-      nextInv.wood.common -= recipe.cost.wood;
-      nextInv.stone.common -= recipe.cost.stone;
-      nextInv.metal.common -= recipe.cost.metal;
-      nextInv.essence.common -= recipe.cost.essence;
+    const newGrid = consumeFromGrid(recipe.cost.wood, recipe.cost.stone, recipe.cost.metal, recipe.cost.essence);
 
-      // Ensure item is completely unique
+    if (newGrid) {
       const newItem = { ...recipe.result, id: `${recipe.result.id}_${Date.now()}` };
       
       onSaveProgress({
         ...progress,
-        inventory: nextInv,
+        stashGrid: newGrid,
         craftedItems: [...(progress.craftedItems || []), newItem]
       });
 
       showNotif(`🛠️ Has fabricado: ${recipe.result.name}`);
     } else {
-      showNotif("❌ Materiales insuficientes en tu inventario permanente (Stash).");
+      showNotif("❌ Materiales insuficientes en tu Almacén Seguro (Grid).");
     }
   };
 

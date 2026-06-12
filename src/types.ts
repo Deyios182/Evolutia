@@ -55,6 +55,15 @@ export interface EquipmentSlots {
   backpack?: CraftableItem | null;
 }
 
+export interface StashSlot {
+  id: string; // Unique ID for React keys
+  type: 'material' | 'equipment';
+  materialCategory?: 'wood' | 'stone' | 'metal' | 'essence';
+  materialRarity?: 'common' | 'rare' | 'epic' | 'legendary';
+  quantity?: number; // max stack 99
+  equipmentItem?: CraftableItem;
+}
+
 export interface PlayerProgress {
   isLoggedIn: boolean;
   username: string;
@@ -69,10 +78,11 @@ export interface PlayerProgress {
   interactionCount: number;
   unlockedArchetypes: string[];  
   // Albion RPG & Neighborhood system extensions
-  inventory: GatheringInventory;
+  inventory: GatheringInventory; // Deprecated slowly, kept for legacy UI compatibility until fully wiped
   craftedItems: CraftableItem[];
-  stashInventory?: GatheringInventory;
-  stashItems?: CraftableItem[];
+  stashGrid?: (StashSlot | null)[]; // New Grid Array (e.g. length 40)
+  stashInventory?: GatheringInventory; // Deprecated
+  stashItems?: CraftableItem[]; // Deprecated
   houseDecorations: { itemId: string; slot: number }[]; 
   equippedWeaponId?: string; // Deprecated
   equippedShieldId?: string; // Deprecated

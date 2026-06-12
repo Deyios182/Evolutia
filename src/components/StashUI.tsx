@@ -1,149 +1,284 @@
-import React, { useState } from 'react';
-import { PlayerProgress } from '../types';
-import { Package, ArrowRightLeft, Shield, Backpack, XCircle } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { PlayerProgress, StashSlot, GatheringInventory } from '../types';
+import { Package, Shield, XCircle, ArrowRightCircle } from 'lucide-react';
 
 interface StashUIProps {
   progress: PlayerProgress;
   onSaveProgress: (newProg: PlayerProgress) => void;
   onClose: () => void;
+  tempBag: GatheringInventory;
+  setTempBag: (bag: GatheringInventory) => void;
 }
 
-export function StashUI({ progress, onSaveProgress, onClose }: StashUIProps) {
-  const materials = ['wood', 'stone', 'metal', 'essence'] as const;
-  const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+const MAX_SLOTS = 40;
+const MAX_STACK = 99;
 
-  const handleTransfer = (
-    direction: 'to_stash' | 'from_stash',
-    matType: 'wood' | 'stone' | 'metal' | 'essence',
-    rarity: 'common' | 'rare' | 'epic' | 'legendary',
-    amount: number
-  ) => {
-    const newProg = { ...progress };
-    
-    // Initialize stashInventory if undefined (backwards compatibility)
-    if (!newProg.stashInventory) {
+export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag }: StashUIProps) {
+  const [grid, setGrid] = useState<(StashSlot | null)[]>([]);
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+
+  // Initialize and Migrate Old Inventory to Grid
+  useEffect(() => {
+    let currentGrid = [...(progress.stashGrid || [])];
+
+    // Pad to 40 slots if smaller or undefined
+    while (currentGrid.length < MAX_SLOTS) {
+      currentGrid.push(null);
+    }
+
+    // Auto-Migrate from legacy stashInventory if it exists and hasn't been cleared
+    let hasMigration = false;
+    const oldStash = progress.stashInventory;
+    if (oldStash) {
+      const materials = ['wood', 'stone', 'metal', 'essence'] as const;
+      const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+
+      materials.forEach(mat => {
+        rarities.forEach(rar => {
+          let qty = oldStash[mat]?.[rar] || 0;
+          while (qty > 0) {
+            const addQty = Math.min(qty, MAX_STACK);
+            // Find empty slot
+            const emptyIdx = currentGrid.findIndex(s => s === null);
+            if (emptyIdx !== -1) {
+              currentGrid[emptyIdx] = {
+                id: `migrated_${mat}_${rar}_${Date.now()}_${Math.random()}`,
+                type: 'material',
+                materialCategory: mat,
+                materialRarity: rar,
+                quantity: addQty
+              };
+              hasMigration = true;
+            }
+            qty -= addQty;
+          }
+        });
+      });
+    }
+
+    setGrid(currentGrid);
+
+    // Save migration immediately if happened
+    if (hasMigration) {
+      const newProg = { ...progress };
+      newProg.stashGrid = currentGrid;
+      // Wipe old stash so it doesn't migrate twice
       newProg.stashInventory = {
         wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
         stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
         metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
         essence: { common: 0, rare: 0, epic: 0, legendary: 0 },
       };
+      onSaveProgress(newProg);
     }
+  }, []);
 
-    if (direction === 'to_stash') {
-      const available = newProg.inventory[matType][rarity] || 0;
-      if (available < amount) return;
-      newProg.inventory[matType][rarity] -= amount;
-      newProg.stashInventory[matType][rarity] = (newProg.stashInventory[matType][rarity] || 0) + amount;
+  const handleSlotClick = (index: number) => {
+    if (selectedIndex === null) {
+      // Select source
+      if (grid[index] !== null) {
+        setSelectedIndex(index);
+      }
     } else {
-      const available = newProg.stashInventory[matType][rarity] || 0;
-      if (available < amount) return;
-      newProg.stashInventory[matType][rarity] -= amount;
-      newProg.inventory[matType][rarity] = (newProg.inventory[matType][rarity] || 0) + amount;
-    }
+      // Action: move/merge/swap
+      if (selectedIndex === index) {
+        // Deselect
+        setSelectedIndex(null);
+        return;
+      }
 
-    onSaveProgress(newProg);
+      const newGrid = [...grid];
+      const source = newGrid[selectedIndex]!;
+      const target = newGrid[index];
+
+      if (!target) {
+        // Move to empty
+        newGrid[index] = source;
+        newGrid[selectedIndex] = null;
+      } else {
+        // Target occupied
+        if (
+          source.type === 'material' && target.type === 'material' &&
+          source.materialCategory === target.materialCategory &&
+          source.materialRarity === target.materialRarity
+        ) {
+          // Merge logic
+          const total = (source.quantity || 0) + (target.quantity || 0);
+          if (total <= MAX_STACK) {
+            target.quantity = total;
+            newGrid[selectedIndex] = null;
+          } else {
+            const remainder = total - MAX_STACK;
+            target.quantity = MAX_STACK;
+            source.quantity = remainder;
+          }
+        } else {
+          // Swap logic
+          newGrid[index] = source;
+          newGrid[selectedIndex] = target;
+        }
+      }
+
+      setGrid(newGrid);
+      setSelectedIndex(null);
+      onSaveProgress({ ...progress, stashGrid: newGrid });
+    }
+  };
+
+  const handleDumpTempBag = () => {
+    const newGrid = [...grid];
+    const inv = { ...tempBag };
+    const materials = ['wood', 'stone', 'metal', 'essence'] as const;
+    const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+    let changesMade = false;
+
+    materials.forEach(mat => {
+      rarities.forEach(rar => {
+        let qty = inv[mat]?.[rar] || 0;
+        
+        while (qty > 0) {
+          // Try to find matching non-full stack
+          let targetIdx = newGrid.findIndex(s => 
+            s !== null && 
+            s.type === 'material' && 
+            s.materialCategory === mat && 
+            s.materialRarity === rar && 
+            (s.quantity || 0) < MAX_STACK
+          );
+
+          if (targetIdx !== -1) {
+            const stack = newGrid[targetIdx]!;
+            const spaceLeft = MAX_STACK - (stack.quantity || 0);
+            const toAdd = Math.min(qty, spaceLeft);
+            stack.quantity = (stack.quantity || 0) + toAdd;
+            qty -= toAdd;
+            changesMade = true;
+          } else {
+            // Find empty slot
+            const emptyIdx = newGrid.findIndex(s => s === null);
+            if (emptyIdx !== -1) {
+              const toAdd = Math.min(qty, MAX_STACK);
+              newGrid[emptyIdx] = {
+                id: `dump_${mat}_${rar}_${Date.now()}_${Math.random()}`,
+                type: 'material',
+                materialCategory: mat,
+                materialRarity: rar,
+                quantity: toAdd
+              };
+              qty -= toAdd;
+              changesMade = true;
+            } else {
+              // Stash full
+              break;
+            }
+          }
+        }
+        inv[mat][rar] = qty; // leave remainder in temp bag if stash is full
+      });
+    });
+
+    if (changesMade) {
+      setGrid(newGrid);
+      setTempBag(inv);
+      onSaveProgress({ ...progress, stashGrid: newGrid });
+    }
+  };
+
+  const renderIcon = (slot: StashSlot) => {
+    if (slot.type === 'material') {
+      const rarColor = 
+        slot.materialRarity === 'common' ? 'text-gray-400' :
+        slot.materialRarity === 'rare' ? 'text-blue-400' :
+        slot.materialRarity === 'epic' ? 'text-purple-400' : 'text-yellow-400';
+        
+      let emoji = '📦';
+      if (slot.materialCategory === 'wood') emoji = '🌲';
+      if (slot.materialCategory === 'stone') emoji = '🪨';
+      if (slot.materialCategory === 'metal') emoji = '⚙️';
+      if (slot.materialCategory === 'essence') emoji = '🔮';
+
+      return (
+        <div className="flex flex-col items-center justify-center w-full h-full relative">
+          <span className="text-2xl drop-shadow-lg">{emoji}</span>
+          <span className={`absolute bottom-0 right-1 text-[10px] font-mono font-bold ${rarColor}`}>
+            x{slot.quantity}
+          </span>
+        </div>
+      );
+    }
+    return <span className="text-xl">🛡️</span>;
   };
 
   return (
     <div className="w-full h-full flex flex-col bg-[#0b0c16] text-white">
-      <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4">
+      <div className="flex items-center justify-between border-b border-white/10 pb-4 mb-4 px-4 pt-4">
         <div className="flex items-center gap-3">
           <Shield className="w-6 h-6 text-amber-500" />
-          <h2 className="text-xl font-bold font-headline-md tracking-wider text-amber-500 uppercase">Almacén Seguro Astral</h2>
+          <h2 className="text-xl font-bold font-headline-md tracking-wider text-amber-500 uppercase">Almacén Seguro Astral (Stash)</h2>
         </div>
-        <button onClick={onClose} className="p-2 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500/40">
+        <button onClick={onClose} className="p-2 bg-red-500/20 text-red-400 rounded-full hover:bg-red-500/40 transition-colors">
           <XCircle className="w-5 h-5" />
         </button>
       </div>
 
-      <div className="bg-amber-900/20 border border-amber-500/20 p-4 rounded-xl text-xs text-amber-200 mb-6 flex items-start gap-3">
-        <Shield className="w-5 h-5 flex-shrink-0" />
-        <p>Los materiales guardados en este Baúl <strong>jamás se perderán</strong> si caes en combate en las Zonas Rojas (Full Loot PvP). Transfiere tus recursos valiosos aquí antes de salir de la cabaña.</p>
-      </div>
-
-      <div className="flex flex-col md:flex-row gap-6 flex-1 overflow-hidden">
+      <div className="flex px-4 gap-6 flex-1 overflow-hidden">
         
-        {/* PLAYER INVENTORY PANEL */}
-        <div className="flex-1 bg-white/5 border border-white/10 rounded-xl p-4 flex flex-col overflow-hidden">
-          <div className="flex items-center gap-2 mb-4 border-b border-white/10 pb-2">
-            <Backpack className="w-5 h-5 text-cyan-400" />
-            <h3 className="font-bold text-cyan-400 uppercase tracking-wide">Mochila Activa</h3>
-          </div>
+        {/* LEFT PANEL: Temp Bag Control */}
+        <div className="w-1/3 bg-[#11131a] border border-white/5 rounded-xl p-6 flex flex-col items-center justify-center relative overflow-hidden">
+          <div className="absolute inset-0 bg-gradient-to-b from-amber-900/10 to-transparent pointer-events-none" />
           
-          <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4">
-            {materials.map(mat => (
-              <div key={`inv_${mat}`} className="bg-black/30 p-3 rounded-lg border border-white/5">
-                <h4 className="font-bold text-[10px] uppercase text-gray-400 mb-2 border-b border-white/10 pb-1">{mat}</h4>
-                {rarities.map(rar => {
-                  const count = progress.inventory[mat][rar] || 0;
-                  if (count === 0) return null;
-                  return (
-                    <div key={`inv_${mat}_${rar}`} className="flex items-center justify-between py-1 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rar === 'common' ? '#34d399' : rar === 'rare' ? '#60a5fa' : rar === 'epic' ? '#c084fc' : '#facc15' }} />
-                        <span className="capitalize">{rar}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold">{count}</span>
-                        <button 
-                          onClick={() => handleTransfer('to_stash', mat, rar, 1)}
-                          className="bg-amber-600/30 hover:bg-amber-500/50 text-amber-400 p-1.5 rounded"
-                          title="Mover 1 al Almacén"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-          </div>
+          <Package className="w-16 h-16 text-amber-500/50 mb-4" />
+          <h3 className="text-lg font-bold uppercase tracking-widest text-amber-500 mb-2">Descarga de Sesión</h3>
+          <p className="text-xs text-gray-400 text-center mb-8">
+            Haz clic aquí para volcar todo el botín que llevas en los bolsillos (Temp Bag) directamente a las celdas vacías de tu Baúl Seguro.
+          </p>
+
+          <button 
+            onClick={handleDumpTempBag}
+            className="group relative px-6 py-3 bg-amber-600 hover:bg-amber-500 text-black font-bold uppercase tracking-widest rounded-lg transition-all flex items-center gap-3 active:scale-95"
+          >
+            Transferir Todo <ArrowRightCircle className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </button>
         </div>
 
-        {/* STASH PANEL */}
-        <div className="flex-1 bg-[#181512] border border-amber-500/20 rounded-xl p-4 flex flex-col overflow-hidden shadow-[0_0_20px_rgba(245,158,11,0.1)]">
-          <div className="flex items-center gap-2 mb-4 border-b border-amber-500/20 pb-2">
-            <Package className="w-5 h-5 text-amber-500" />
-            <h3 className="font-bold text-amber-500 uppercase tracking-wide">Baúl Seguro</h3>
+        {/* RIGHT PANEL: The Grid */}
+        <div className="flex-1 bg-[#0a0a0e] border border-white/10 rounded-xl p-4 flex flex-col shadow-[0_0_30px_rgba(0,0,0,0.8)] inset-shadow">
+          
+          <div className="flex justify-between items-end mb-4 px-2">
+            <div>
+              <h3 className="font-bold text-gray-300 uppercase tracking-widest text-sm">Celdas de Almacenamiento</h3>
+              <p className="text-[10px] text-gray-500 font-mono">Límite por stack: 99 unidades | Clic para mover y agrupar</p>
+            </div>
+            <div className="text-[10px] text-gray-500 font-mono">
+              Slots Ocupados: <span className="text-amber-500 font-bold">{grid.filter(s => s !== null).length}</span> / {MAX_SLOTS}
+            </div>
           </div>
 
-          <div className="overflow-y-auto custom-scrollbar pr-2 space-y-4">
-            {materials.map(mat => (
-              <div key={`stash_${mat}`} className="bg-black/50 p-3 rounded-lg border border-amber-500/10">
-                <h4 className="font-bold text-[10px] uppercase text-amber-500/60 mb-2 border-b border-amber-500/10 pb-1">{mat}</h4>
-                {rarities.map(rar => {
-                  const count = progress.stashInventory?.[mat]?.[rar] || 0;
-                  if (count === 0) return null;
-                  return (
-                    <div key={`stash_${mat}_${rar}`} className="flex items-center justify-between py-1 text-sm">
-                      <div className="flex items-center gap-2">
-                        <span className="w-2 h-2 rounded-full" style={{ backgroundColor: rar === 'common' ? '#34d399' : rar === 'rare' ? '#60a5fa' : rar === 'epic' ? '#c084fc' : '#facc15' }} />
-                        <span className="capitalize text-amber-100">{rar}</span>
-                      </div>
-                      <div className="flex items-center gap-3">
-                        <span className="font-mono font-bold text-amber-400">{count}</span>
-                        <button 
-                          onClick={() => handleTransfer('from_stash', mat, rar, 1)}
-                          className="bg-cyan-600/30 hover:bg-cyan-500/50 text-cyan-400 p-1.5 rounded"
-                          title="Sacar 1 a la Mochila"
-                        >
-                          <ArrowRightLeft className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))}
-            
-            {(!progress.stashInventory || 
-              materials.every(m => rarities.every(r => (progress.stashInventory![m][r] || 0) === 0))) && (
-              <div className="text-center py-12 text-gray-500 italic opacity-50">
-                Tu baúl está vacío. Guarda aquí tus recursos para no perderlos.
-              </div>
-            )}
+          <div className="grid grid-cols-8 gap-1.5 auto-rows-max p-2 bg-[#14151c] rounded-lg border border-white/5 h-full content-start overflow-y-auto custom-scrollbar">
+            {grid.map((slot, idx) => {
+              const isSelected = selectedIndex === idx;
+              
+              let bgClass = "bg-[#1d1f2a]";
+              let borderClass = "border-white/5";
+
+              if (isSelected) {
+                bgClass = "bg-amber-900/40";
+                borderClass = "border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]";
+              } else if (slot) {
+                bgClass = "bg-[#252836] hover:bg-[#2c3040]";
+                borderClass = "border-white/10 hover:border-white/30";
+              }
+
+              return (
+                <div 
+                  key={idx}
+                  onClick={() => handleSlotClick(idx)}
+                  className={`relative aspect-square rounded cursor-pointer transition-all border ${bgClass} ${borderClass} flex items-center justify-center select-none`}
+                >
+                  {slot && renderIcon(slot)}
+                </div>
+              );
+            })}
           </div>
         </div>
 
