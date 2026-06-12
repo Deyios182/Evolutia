@@ -905,7 +905,7 @@ export function FirstPersonWorld({
       if (isLocked) {
         const deltaX = e.movementX;
         const deltaY = e.movementY;
-        setCameraAngle(prev => prev - deltaX * 0.003);
+        setCameraAngle(prev => prev + deltaX * 0.003);
         setCameraPitch(prev => Math.max(-0.75, Math.min(0.75, prev - deltaY * 0.003)));
       } else {
         if (!isDragging) return;
@@ -914,7 +914,7 @@ export function FirstPersonWorld({
         prevMouseX = e.clientX;
         prevMouseY = e.clientY;
 
-        setCameraAngle(prev => prev - deltaX * 0.0055);
+        setCameraAngle(prev => prev + deltaX * 0.0055);
         setCameraPitch(prev => Math.max(-0.6, Math.min(0.6, prev - deltaY * 0.0055)));
       }
     };
@@ -1019,7 +1019,7 @@ export function FirstPersonWorld({
       loopId = requestAnimationFrame(moveLoop);
 
       // Speed metrics
-      const speed = 0.07;
+      const speed = 0.025;
       let dx = 0;
       let dz = 0;
 
@@ -1039,6 +1039,13 @@ export function FirstPersonWorld({
       if (keys['d'] || keys['arrowright']) {
         dx += Math.cos(cameraAngle);
         dz += Math.sin(cameraAngle);
+      }
+
+      // Normalize movement vector to prevent diagonal speedup
+      const length = Math.sqrt(dx * dx + dz * dz);
+      if (length > 0) {
+        dx /= length;
+        dz /= length;
       }
 
       // Safe bound clamps
