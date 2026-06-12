@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Loader2, Volume2, XCircle } from 'lucide-react';
 import { PlayerProgress } from '../types';
+import { GoogleGenAI } from '@google/genai';
 
 interface GeminiLiveChatProps {
   progress: PlayerProgress;
@@ -13,31 +14,30 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
-  const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  
-  // Audio playback queue
-  const playQueue = useRef<Float32Array[]>([]);
-  const isPlaying = useRef(false);
+  const liveSessionRef = useRef<any>(null);
+  const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
-  // PCM Conversion Helpers
-  const base64ToArrayBuffer = (base64: string) => {
+  const decodeBase64 = (base64: string): Uint8Array => {
     const binaryString = window.atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    return bytes.buffer;
+    return bytes;
   };
 
-  const convertInt16ToFloat32 = (int16Array: Int16Array) => {
-    const float32Array = new Float32Array(int16Array.length);
-    for (let i = 0; i < int16Array.length; i++) {
-      float32Array[i] = int16Array[i] / 32768.0;
+  const decodeAudioData = async (data: Uint8Array, ctx: AudioContext): Promise<AudioBuffer> => {
+    const dataInt16 = new Int16Array(data.buffer);
+    const frameCount = dataInt16.length;
+    const buffer = ctx.createBuffer(1, frameCount, 24000);
+    const channelData = buffer.getChannelData(0);
+    for (let i = 0; i < frameCount; i++) {
+      channelData[i] = dataInt16[i] / 32768.0;
     }
-    return float32Array;
+    return buffer;
   };
 
   const float32ToInt16Base64 = (float32Array: Float32Array) => {
@@ -61,136 +61,70 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
       setIsConnecting(true);
       setError(null);
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) {
-        throw new Error("No VITE_GEMINI_API_KEY set in .env");
-      }
+      if (!apiKey) throw new Error("No VITE_GEMINI_API_KEY en tu .env");
 
-      // 1. Create AudioContext synchronously on user click to bypass Chrome Autoplay Policy
+      // 1. Iniciar Audio Síncrono
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-      await audioCtx.resume(); // Force start
+      await audioCtx.resume();
       audioCtxRef.current = audioCtx;
 
-      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
-      const ws = new WebSocket(wsUrl);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        // Send Initial Setup
-        const nitzName = progress.avatar?.name || 'Nitz';
-        const setupMessage = {
-          setup: {
-            model: "models/gemini-2.0-flash-exp",
-            generationConfig: {
-              responseModalities: ["AUDIO"]
-            },
-            systemInstruction: {
-              parts: [{
-                text: `Eres ${nitzName}, un compañero IA leal en el mundo de supervivencia llamado Evolutia. Eres astuto, místico y directo. El jugador es un explorador humano que confía en ti. Los stats del jugador son: HP ${progress.hp}/${progress.maxHp}, Oro: ${progress.gold}. Tu personalidad depende de tu fase (Fase ${progress.phase}) y de tu color primario que ahora refleja que eres un aliado de supervivencia. Háblale en español directamente. No describas tus acciones entre asteriscos.`
-              }]
-            }
-          }
-        };
-        ws.send(JSON.stringify(setupMessage));
-        
-        // Setup Audio after WebSocket connects
-        setupAudio(ws, audioCtx);
-      };
-
-      ws.onmessage = (event) => {
-        if (typeof event.data === 'string') {
-          const msg = JSON.parse(event.data);
-          
-          if (msg.serverContent && msg.serverContent.modelTurn) {
-            const parts = msg.serverContent.modelTurn.parts;
-            for (const part of parts) {
-              if (part.text) {
-                console.log("Nitz dice (Texto):", part.text);
-              }
-              if (part.inlineData && part.inlineData.data) {
-                // Audio data received (PCM 24kHz)
-                const base64Audio = part.inlineData.data;
-                const arrayBuffer = base64ToArrayBuffer(base64Audio);
-                const int16Array = new Int16Array(arrayBuffer);
-                const float32Array = convertInt16ToFloat32(int16Array);
-                
-                playQueue.current.push(float32Array);
-                if (!isPlaying.current) {
-                  playNextAudio();
-                }
-              }
-            }
-          }
-        }
-      };
-
-      ws.onerror = (e) => {
-        console.error("Gemini WebSocket Error:", e);
-        setError("Error de conexión al servidor de Gemini.");
-        setIsConnecting(false);
-      };
-
-      ws.onclose = () => {
-        setIsConnected(false);
-        setIsConnecting(false);
-        stopAudio();
-      };
-      
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Error desconocido al inicializar Gemini.");
-      setIsConnecting(false);
-    }
-  };
-
-  const playNextAudio = () => {
-    if (playQueue.current.length === 0 || !audioCtxRef.current) {
-      isPlaying.current = false;
-      setIsSpeaking(false);
-      return;
-    }
-
-    isPlaying.current = true;
-    setIsSpeaking(true);
-    const audioData = playQueue.current.shift()!;
-    const ctx = audioCtxRef.current;
-    
-    // Gemini outputs 24kHz PCM
-    const buffer = ctx.createBuffer(1, audioData.length, 24000);
-    buffer.copyToChannel(audioData, 0);
-
-    const source = ctx.createBufferSource();
-    source.buffer = buffer;
-    source.connect(ctx.destination);
-    
-    source.onended = () => {
-      playNextAudio();
-    };
-    source.start();
-  };
-
-  const setupAudio = async (ws: WebSocket, audioCtx: AudioContext) => {
-    try {
+      // 2. Pedir Micrófono
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
+      // 3. Conectar SDK Oficial
+      const ai = new GoogleGenAI({ apiKey });
+      const session = await ai.models.generateContentLive({
+        model: "gemini-2.0-flash-exp",
+        config: {
+          responseModalities: ["AUDIO"],
+          systemInstruction: {
+            parts: [{
+              text: `Eres ${progress.avatar?.name || 'Nitz'}, un compañero IA leal en el mundo de supervivencia Evolutia. El jugador confía en ti. Sus stats: HP ${progress.hp}/${progress.maxHp}, Oro: ${progress.gold}. Fase ${progress.phase}. Háblale en español directamente. Salúdalo efusivamente ahora mismo para confirmar que me escuchas.`
+            }]
+          }
+        }
+      });
+      
+      liveSessionRef.current = session;
+
+      // 4. Escuchar Respuestas
+      session.on('content', async (content: any) => {
+        const parts = content.modelTurn?.parts || [];
+        for (const part of parts) {
+          if (part.text) console.log("Nitz dice:", part.text);
+          if (part.inlineData && part.inlineData.data) {
+             const bytes = decodeBase64(part.inlineData.data);
+             const audioBuffer = await decodeAudioData(bytes, audioCtx);
+             
+             if (currentSourceRef.current) currentSourceRef.current.stop();
+             
+             const source = audioCtx.createBufferSource();
+             source.buffer = audioBuffer;
+             source.connect(audioCtx.destination);
+             
+             setIsSpeaking(true);
+             source.onended = () => setIsSpeaking(false);
+             source.start(0);
+             currentSourceRef.current = source;
+          }
+        }
+      });
+
+      session.on('close', () => disconnectFromGemini());
+
+      // 5. Iniciar Envío de Audio
       const source = audioCtx.createMediaStreamSource(stream);
-      // Deprecated but widely supported without serving external worklet files
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (ws.readyState === WebSocket.OPEN) {
+        if (liveSessionRef.current) {
           const inputData = e.inputBuffer.getChannelData(0);
-          const base64PCM = float32ToInt16Base64(inputData);
-          
-          ws.send(JSON.stringify({
-            realtimeInput: {
-              mediaChunks: [{
-                mimeType: "audio/pcm;rate=16000",
-                data: base64PCM
-              }]
-            }
-          }));
+          liveSessionRef.current.sendRealtimeInput([{
+             mimeType: "audio/pcm;rate=16000",
+             data: float32ToInt16Base64(inputData)
+          }]);
         }
       };
 
@@ -200,102 +134,60 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
       setIsConnected(true);
       setIsConnecting(false);
 
-      // Force Nitz to say hello first
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          clientContent: {
-            turns: [{
-              role: "user",
-              parts: [{ text: "¡Enlace neuronal establecido! Por favor, salúdame brevemente por voz para confirmar la conexión." }]
-            }],
-            turnComplete: true
-          }
-        }));
-      }
+      // Enviar saludo
+      liveSessionRef.current.sendRealtimeInput([{ text: "¡Hola! He encendido el intercomunicador, háblame por voz." }]);
 
-    } catch (e) {
-      console.error("Microphone access error:", e);
-      setError("Permisos de micrófono denegados.");
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Error al inicializar.");
       setIsConnecting(false);
     }
   };
 
-  const stopAudio = () => {
-    if (processorRef.current && audioCtxRef.current) {
-      processorRef.current.disconnect();
-    }
-    if (mediaStreamRef.current) {
-      mediaStreamRef.current.getTracks().forEach(t => t.stop());
-    }
-    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') {
-      audioCtxRef.current.close().catch(() => {});
-    }
-  };
-
   const disconnectFromGemini = () => {
-    if (wsRef.current) {
-      wsRef.current.close();
+    if (liveSessionRef.current && typeof liveSessionRef.current.close === 'function') {
+      try { liveSessionRef.current.close(); } catch(e){}
     }
-    stopAudio();
+    if (processorRef.current && audioCtxRef.current) processorRef.current.disconnect();
+    if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
+    if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') audioCtxRef.current.close().catch(()=>{});
     setIsConnected(false);
   };
 
   useEffect(() => {
-    return () => {
-      disconnectFromGemini();
-    };
+    return () => disconnectFromGemini();
   }, []);
 
   return (
     <div className="w-full max-w-lg mx-auto bg-[#0a0a0e] border border-cyan-500/20 rounded-2xl shadow-2xl p-6 relative overflow-hidden flex flex-col items-center">
-      
-      {/* Decorative BG */}
       <div className="absolute inset-0 bg-gradient-to-t from-cyan-900/10 to-transparent pointer-events-none" />
-      <div className="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-cyan-500 to-transparent opacity-50" />
-
-      <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white transition-colors z-10">
-        <XCircle className="w-6 h-6" />
-      </button>
+      <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white z-10"><XCircle className="w-6 h-6" /></button>
 
       <div className="relative mb-8 mt-4">
-        <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all duration-500 ${isSpeaking ? 'border-cyan-400 bg-cyan-900/20 shadow-[0_0_50px_rgba(34,211,238,0.4)] scale-110' : 'border-gray-700 bg-[#12131a] scale-100'}`}>
+        <div className={`w-32 h-32 rounded-full border-4 flex items-center justify-center transition-all duration-500 ${isSpeaking ? 'border-cyan-400 bg-cyan-900/20 scale-110' : 'border-gray-700 bg-[#12131a] scale-100'}`}>
           <Volume2 className={`w-12 h-12 ${isSpeaking ? 'text-cyan-400 animate-pulse' : 'text-gray-600'}`} />
         </div>
-        
-        {/* Connection status dot */}
         <div className={`absolute bottom-2 right-2 w-5 h-5 rounded-full border-2 border-[#0a0a0e] ${isConnected ? 'bg-emerald-500' : 'bg-red-500'}`} />
-      </div>
-
-      <div className="text-center z-10 w-full mb-8">
-        <h2 className="text-2xl font-bold font-headline-md tracking-wider text-white mb-2">Conexión Neural</h2>
-        <p className="text-sm text-cyan-400/70 font-mono h-8">
-          {error ? <span className="text-red-400">{error}</span> : 
-           isConnecting ? 'Sincronizando con satélites Gemini...' : 
-           isConnected ? 'Canal Bidireccional Establecido. Habla ahora.' : 
-           'Compañero IA en estado de hibernación.'}
-        </p>
       </div>
 
       <div className="z-10 w-full">
         {!isConnected ? (
           <button 
-            onClick={connectToGemini}
-            disabled={isConnecting}
-            className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 disabled:bg-gray-700 text-white font-bold tracking-widest uppercase rounded-xl shadow-[0_0_20px_rgba(34,211,238,0.3)] transition-all flex items-center justify-center gap-3 active:scale-95"
+            onClick={connectToGemini} disabled={isConnecting}
+            className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-3"
           >
             {isConnecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
-            {isConnecting ? 'Conectando...' : 'Iniciar Transmisión'}
+            {isConnecting ? 'Sincronizando...' : 'Conectar Nitz'}
           </button>
         ) : (
           <button 
             onClick={disconnectFromGemini}
-            className="w-full py-4 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-500/30 font-bold tracking-widest uppercase rounded-xl transition-all flex items-center justify-center gap-3 active:scale-95"
+            className="w-full py-4 bg-red-600/20 text-red-400 border border-red-500/30 font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-3"
           >
-            <MicOff className="w-5 h-5" /> Terminar Enlace
+            <MicOff className="w-5 h-5" /> Terminar
           </button>
         )}
       </div>
-
     </div>
   );
 }
