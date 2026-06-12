@@ -29,8 +29,197 @@ import {
   MessageSquare
 } from 'lucide-react';
 import * as THREE from 'three';
-import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName } from '../types';
+import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName, AvatarCustomization } from '../types';
 import { db, auth } from '../firebase';
+
+const EMOTION_COLORS: Record<EmotionName, number> = {
+  Alegría: 0xffd700,    // Gold
+  Amor: 0xff1493,       // Vibrant Pink
+  Ira: 0xff3b30,        // Intense Red-Orange
+  Miedo: 0x4b0082,      // Indigo / Deep Indigo
+  Serenidad: 0x00e1d9,  // Emerald Sky Blue
+  Tristeza: 0x3278ff,   // Royal Blue
+  Confianza: 0x2cd178,  // Soft Emerald Green
+  Sorpresa: 0xff9f29,   // Electric Amber/Orange
+  Orgullo: 0xce7aff,    // Radiating Magenta/Violet
+};
+
+function createDetailedNitzMesh(
+  avatar: AvatarCustomization,
+  dominantEmotion: EmotionName,
+  phase: number,
+  customScale: number = 0.35
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Resolve color
+  let nColor = EMOTION_COLORS[dominantEmotion] || 0xfdcc15;
+  if (avatar.colorTheme === 'abyssal') nColor = 0x8b5cf6;
+  else if (avatar.colorTheme === 'solstice') nColor = 0xf59e0b;
+  else if (avatar.colorTheme === 'primeval') nColor = 0xef4444;
+
+  // 1. Body
+  const bodyGeometry = new THREE.SphereGeometry(1.2, 24, 24);
+  const bodyMaterial = new THREE.MeshPhongMaterial({
+    color: 0xf5f8ff,
+    emissive: 0x111422,
+    shininess: 90,
+  });
+  const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  bodyMesh.castShadow = true;
+  bodyMesh.receiveShadow = true;
+  group.add(bodyMesh);
+
+  // 2. Eyes
+  const eyesGroup = new THREE.Group();
+  eyesGroup.position.set(0, 0.25, 1.0);
+  group.add(eyesGroup);
+
+  const eyeGeo = new THREE.SphereGeometry(0.18, 16, 16);
+  const eyeMat = new THREE.MeshPhongMaterial({ color: 0x070912, shininess: 120 });
+  const leftEyeSocket = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEyeSocket.position.set(-0.45, 0, 0.1);
+  leftEyeSocket.scale.set(1.2, 1, 0.5);
+  const rightEyeSocket = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEyeSocket.position.set(0.45, 0, 0.1);
+  rightEyeSocket.scale.set(1.2, 1, 0.5);
+  eyesGroup.add(leftEyeSocket, rightEyeSocket);
+
+  // Pupils (dynamically colored by emotion/theme)
+  const pupilGeo = new THREE.SphereGeometry(0.08, 12, 12);
+  const pupilMat = new THREE.MeshBasicMaterial({ color: nColor });
+  const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  leftPupil.position.set(-0.45, 0, 0.18);
+  leftPupil.scale.set(1.1, 1.3, 0.4);
+  const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  rightPupil.position.set(0.45, 0, 0.18);
+  rightPupil.scale.set(1.1, 1.3, 0.4);
+  eyesGroup.add(leftPupil, rightPupil);
+
+  // Shine Spots
+  const shineGeo = new THREE.SphereGeometry(0.03, 8, 8);
+  const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const shineL = new THREE.Mesh(shineGeo, shineMat);
+  shineL.position.set(-0.42, 0.05, 0.23);
+  const shineR = new THREE.Mesh(shineGeo, shineMat);
+  shineR.position.set(0.48, 0.05, 0.23);
+  eyesGroup.add(shineL, shineR);
+
+  // 3. Dynamic Tail
+  const tailGroup = new THREE.Group();
+  tailGroup.position.set(0, -0.6, -1.0);
+  group.add(tailGroup);
+
+  const segmentCount = 6;
+  const segmentRadius = 0.18;
+  let currentParent: THREE.Object3D = tailGroup;
+  for (let i = 0; i < segmentCount; i++) {
+    const sizeScale = 1.0 - (i / segmentCount) * 0.5;
+    const length = 0.35;
+    const tailSegGeo = new THREE.ConeGeometry(segmentRadius * sizeScale, length, 12);
+    const tailSegMat = new THREE.MeshPhongMaterial({
+      color: 0xf5f8ff,
+      shininess: 60,
+    });
+    const tailSeg = new THREE.Mesh(tailSegGeo, tailSegMat);
+    tailSeg.rotation.x = -Math.PI / 2;
+    tailSeg.position.set(0, 0, -length * 0.6);
+
+    const joint = new THREE.Group();
+    joint.position.set(0, 0, i === 0 ? 0 : -length * 0.9);
+    joint.add(tailSeg);
+    currentParent.add(joint);
+    currentParent = joint;
+  }
+
+  // 4. Ears (Phase 2+)
+  const leftEarJoint = new THREE.Group();
+  leftEarJoint.position.set(-0.6, 0.9, 0.2);
+  leftEarJoint.rotation.set(0, 0.2, -0.4);
+  group.add(leftEarJoint);
+
+  const rightEarJoint = new THREE.Group();
+  rightEarJoint.position.set(0.6, 0.9, 0.2);
+  rightEarJoint.rotation.set(0, -0.2, 0.4);
+  group.add(rightEarJoint);
+
+  const earGeo = new THREE.ConeGeometry(0.28, 1.1, 12);
+  earGeo.translate(0, 0.55, 0);
+  const earInnerMat = new THREE.MeshPhongMaterial({ color: 0xff69b4 });
+  const earOuterMat = new THREE.MeshPhongMaterial({ color: 0xf5f8ff });
+
+  const leftEar = new THREE.Mesh(earGeo, earOuterMat);
+  const leftEarInner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.9, 12).translate(0, 0.45, 0.05), earInnerMat);
+  leftEarJoint.add(leftEar, leftEarInner);
+
+  const rightEar = new THREE.Mesh(earGeo, earOuterMat);
+  const rightEarInner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.9, 12).translate(0, 0.45, 0.05), earInnerMat);
+  rightEarJoint.add(rightEar, rightEarInner);
+
+  if (phase < 2) {
+    leftEarJoint.visible = false;
+    rightEarJoint.visible = false;
+  }
+
+  // 5. Crown / Halo / Accessories (Phase 5+ or specific accessory)
+  const crownMat = new THREE.MeshPhongMaterial({
+    color: 0xffd700,
+    emissive: 0x5a4500,
+    shininess: 120,
+  });
+  const crownGeo = new THREE.TorusGeometry(0.7, 0.05, 8, 24);
+  const crownMesh = new THREE.Mesh(crownGeo, crownMat);
+  crownMesh.rotation.x = Math.PI / 2.2;
+  crownMesh.position.set(0, 1.7, -0.3);
+  group.add(crownMesh);
+
+  if (phase >= 4 || avatar.accessory === 'halo') {
+    crownMesh.visible = true;
+  } else if (avatar.accessory === 'horn_gold') {
+    crownMesh.visible = true;
+    crownMesh.material = new THREE.MeshPhongMaterial({ color: 0xffaa00, shininess: 200 });
+  } else if (avatar.accessory === 'ribbon') {
+    crownMesh.visible = true;
+    crownMesh.material = new THREE.MeshPhongMaterial({ color: 0xff3b90, shininess: 100 });
+  } else {
+    crownMesh.visible = false;
+  }
+
+  // 6. Aura Outer Shell
+  const auraGeo = new THREE.SphereGeometry(1.8, 24, 24);
+  const auraMat = new THREE.MeshBasicMaterial({
+    color: nColor,
+    transparent: true,
+    opacity: 0.15,
+    side: THREE.BackSide,
+  });
+  const auraMesh = new THREE.Mesh(auraGeo, auraMat);
+  group.add(auraMesh);
+
+  // Set visual scale
+  const evolutionScale = 0.75 + phase * 0.22;
+  group.scale.setScalar(customScale * evolutionScale);
+
+  // Store references in userData for animation access in tick loops
+  group.userData = {
+    leftEar: leftEarJoint,
+    rightEar: rightEarJoint,
+    tail: tailGroup,
+    aura: auraMesh,
+    body: bodyMesh,
+    crown: crownMesh,
+    leftPupil,
+    rightPupil,
+    leftEyeSocket,
+    rightEyeSocket,
+    colorTheme: avatar.colorTheme,
+    dominantEmotion,
+    phase,
+    accessory: avatar.accessory,
+  };
+
+  return group;
+}
 import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, arrayUnion, addDoc } from 'firebase/firestore';
 
 // Subcomponents to render as immersive overlays
@@ -65,6 +254,7 @@ interface OnlinePlayer {
   pvpEnabled?: boolean;
   companionSummoned?: boolean;
   activeNitzName?: string;
+  avatar?: AvatarCustomization;
 }
 
 interface InteractiveNode3D {
@@ -269,8 +459,8 @@ export function FirstPersonWorld({
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const keysDownRef = useRef<{ [key: string]: boolean }>({});
-  const companionMeshRef = useRef<THREE.Mesh | null>(null);
-  const companionRingRef = useRef<THREE.Mesh | null>(null);
+  const companionMeshRef = useRef<THREE.Group | THREE.Mesh | null>(null);
+  const companionRingRef = useRef<THREE.Group | THREE.Mesh | null>(null);
   const strikeNodeRef = useRef<InteractiveNode3D | null>(null);
 
   // Setup initial key listeners
@@ -513,7 +703,14 @@ export function FirstPersonWorld({
               facingAngle: data.facingAngle !== undefined ? parseFloat(data.facingAngle) : 0,
               pvpEnabled: data.pvpEnabled || false,
               companionSummoned: data.companionSummoned || false,
-              activeNitzName: data.activeNitzName || data.avatar?.name || 'Nitz de Origen'
+              activeNitzName: data.activeNitzName || data.avatar?.name || 'Nitz de Origen',
+              avatar: data.avatar || {
+                name: data.activeNitzName || 'Nitz de Origen',
+                accessory: 'none',
+                auraType: 'none',
+                colorTheme: (data.activeNitzName === 'Nitz Ígneo' ? 'primeval' : data.activeNitzName === 'Nitz Abisal' ? 'abyssal' : 'classic'),
+                clothing: 'none'
+              }
             });
           }
         }
@@ -985,34 +1182,21 @@ export function FirstPersonWorld({
     };
 
     // Populate actual online peers dynamically in tick loop via onlinePlayersRef to prevent scene re-creation
-    const peerMeshes: { id: string; mesh: THREE.Mesh; companionMesh?: THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
+    const peerMeshes: { id: string; mesh: THREE.Mesh; companionMesh?: THREE.Group | THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
 
     // Render Summoned Nitz Companion in open maps
-    let companionMesh: THREE.Mesh | null = null;
+    let companionMesh: THREE.Group | THREE.Mesh | null = null;
     let companionRing: THREE.Mesh | null = null;
     if (progress.companionSummoned && currentMap !== 'cabin') {
-      const nitzGeo = new THREE.SphereGeometry(0.45, 16, 16);
-      let nCol = currentDominant.colorHex;
-      if (progress.avatar.name === "Nitz Ígneo") nCol = 0xef4444; // Fire Red
-      else if (progress.avatar.name === "Nitz Abisal") nCol = 0x8b5cf6; // Void Purple
-
-      const nitzMat = new THREE.MeshStandardMaterial({
-        color: nCol,
-        roughness: 0.1,
-        emissive: nCol,
-        emissiveIntensity: 0.45
-      });
-      companionMesh = new THREE.Mesh(nitzGeo, nitzMat);
+      companionMesh = createDetailedNitzMesh(
+        progress.avatar,
+        currentDominant.name as EmotionName,
+        progress.phase,
+        0.35
+      );
       companionMesh.position.set(playerX + 1.2, 1.2, playerZ - 1.2);
       scene.add(companionMesh);
       companionMeshRef.current = companionMesh;
-
-      const ringGeo = new THREE.TorusGeometry(0.6, 0.02, 4, 24);
-      const ringMat = new THREE.MeshBasicMaterial({ color: nCol, transparent: true, opacity: 0.7 });
-      companionRing = new THREE.Mesh(ringGeo, ringMat);
-      companionRing.rotation.x = Math.PI / 2;
-      companionMesh.add(companionRing);
-      companionRingRef.current = companionRing;
     } else {
       companionMeshRef.current = null;
       companionRingRef.current = null;
@@ -1160,8 +1344,51 @@ export function FirstPersonWorld({
         companionMesh.position.y += (targetY - companionMesh.position.y) * 0.08;
 
         companionMesh.rotation.y += 0.025;
-        if (companionRing) {
-          companionRing.rotation.z -= 0.015;
+
+        // Detailed animation from userData
+        const ud = companionMesh.userData;
+        if (ud && ud.body) {
+          // 1. Ear wiggles based on emotion intensity
+          if (ud.leftEar && ud.rightEar && ud.phase >= 2) {
+            ud.leftEar.rotation.z = -0.4 + Math.sin(timer * 4) * 0.08;
+            ud.rightEar.rotation.z = 0.4 - Math.sin(timer * 4) * 0.08;
+          }
+          // 2. Elegant crown float
+          if (ud.crown && ud.crown.visible) {
+            ud.crown.position.y = 1.5 + Math.sin(timer * 1.5) * 0.08;
+            ud.crown.rotation.y = timer * 0.8;
+          }
+          // 3. Body breathing
+          const breath = 1.0 + Math.sin(timer * 1.5) * 0.04;
+          ud.body.scale.set(breath, 1.0 / breath, breath);
+          // 4. Aura pulsing
+          if (ud.aura) {
+            const pulse = 1.05 + Math.sin(timer * 4) * 0.06;
+            ud.aura.scale.set(pulse, pulse, pulse);
+          }
+          // 5. Tail wagging based on emotional speed
+          if (ud.tail) {
+            let segment = ud.tail.children[0];
+            let depth = 0;
+            let speedMultiplier = 6.0;
+            let amplitude = 0.25;
+            if (ud.dominantEmotion === 'Ira') {
+              speedMultiplier = 8.5;
+              amplitude = 0.35;
+            } else if (ud.dominantEmotion === 'Tristeza') {
+              speedMultiplier = 1.5;
+              amplitude = 0.08;
+            }
+            while (segment && depth < 6) {
+              const waveAngle = Math.sin(timer * speedMultiplier - depth * 0.5) * amplitude;
+              segment.rotation.z = waveAngle;
+              segment.rotation.y = Math.cos(timer * 1.5 + depth * 0.3) * 0.05;
+              
+              const nextJoint = segment.parent?.children.find((c: any) => c !== segment);
+              segment = nextJoint ? nextJoint.children[0] : null;
+              depth++;
+            }
+          }
         }
       }
 
@@ -1208,20 +1435,20 @@ export function FirstPersonWorld({
           scene.add(mesh);
 
           // Render peer's companion Nitz if companionSummoned is true
-          let peerNitzMesh: THREE.Mesh | null = null;
+          let peerNitzMesh: THREE.Group | THREE.Mesh | null = null;
           if (peer.companionSummoned) {
-            const cGeo = new THREE.SphereGeometry(0.3, 12, 12);
-            let nCol = col;
-            if (peer.activeNitzName === "Nitz Ígneo") nCol = 0xef4444; // Fire Red
-            else if (peer.activeNitzName === "Nitz Abisal") nCol = 0x8b5cf6; // Void Purple
-
-            const cMat = new THREE.MeshStandardMaterial({
-              color: nCol,
-              emissive: nCol,
-              emissiveIntensity: 0.45,
-              roughness: 0.15
-            });
-            peerNitzMesh = new THREE.Mesh(cGeo, cMat);
+            peerNitzMesh = createDetailedNitzMesh(
+              peer.avatar || {
+                name: peer.activeNitzName || 'Nitz de Origen',
+                accessory: 'none',
+                auraType: 'none',
+                colorTheme: (peer.activeNitzName === 'Nitz Ígneo' ? 'primeval' : peer.activeNitzName === 'Nitz Abisal' ? 'abyssal' : 'classic'),
+                clothing: 'none'
+              },
+              peer.dominantEmotion,
+              peer.phase || 1,
+              0.25
+            );
             peerNitzMesh.position.set((peer.posX || 0) + 0.8, 1.0, (peer.posZ || 0) - 0.8);
             scene.add(peerNitzMesh);
           }
@@ -1242,18 +1469,18 @@ export function FirstPersonWorld({
               pm.companionMesh = null;
             }
             if (peer.companionSummoned) {
-              const cGeo = new THREE.SphereGeometry(0.3, 12, 12);
-              let nCol = col;
-              if (peer.activeNitzName === "Nitz Ígneo") nCol = 0xef4444;
-              else if (peer.activeNitzName === "Nitz Abisal") nCol = 0x8b5cf6;
-
-              const cMat = new THREE.MeshStandardMaterial({
-                color: nCol,
-                emissive: nCol,
-                emissiveIntensity: 0.45,
-                roughness: 0.15
-              });
-              pm.companionMesh = new THREE.Mesh(cGeo, cMat);
+              pm.companionMesh = createDetailedNitzMesh(
+                peer.avatar || {
+                  name: peer.activeNitzName || 'Nitz de Origen',
+                  accessory: 'none',
+                  auraType: 'none',
+                  colorTheme: (peer.activeNitzName === 'Nitz Ígneo' ? 'primeval' : peer.activeNitzName === 'Nitz Abisal' ? 'abyssal' : 'classic'),
+                  clothing: 'none'
+                },
+                peer.dominantEmotion,
+                peer.phase || 1,
+                0.25
+              );
               pm.companionMesh.position.copy(pm.mesh.position).add(new THREE.Vector3(0.8, -0.2, -0.8));
               scene.add(pm.companionMesh);
             }
@@ -1290,6 +1517,35 @@ export function FirstPersonWorld({
           pm.companionMesh.position.y += (compTargetY - pm.companionMesh.position.y) * 0.1;
           
           pm.companionMesh.rotation.y += 0.03;
+
+          // Detailed animations for peer companion
+          const ud = pm.companionMesh.userData;
+          if (ud && ud.body) {
+            if (ud.leftEar && ud.rightEar && ud.phase >= 2) {
+              ud.leftEar.rotation.z = -0.4 + Math.sin(timer * 4) * 0.08;
+              ud.rightEar.rotation.z = 0.4 - Math.sin(timer * 4) * 0.08;
+            }
+            if (ud.crown && ud.crown.visible) {
+              ud.crown.position.y = 1.5 + Math.sin(timer * 1.5) * 0.08;
+              ud.crown.rotation.y = timer * 0.8;
+            }
+            const breath = 1.0 + Math.sin(timer * 1.5) * 0.04;
+            ud.body.scale.set(breath, 1.0 / breath, breath);
+            if (ud.aura) {
+              const pulse = 1.05 + Math.sin(timer * 4) * 0.06;
+              ud.aura.scale.set(pulse, pulse, pulse);
+            }
+            if (ud.tail) {
+              let segment = ud.tail.children[0];
+              let depth = 0;
+              while (segment && depth < 6) {
+                segment.rotation.z = Math.sin(timer * 6 - depth * 0.5) * 0.25;
+                const nextJoint = segment.parent?.children.find((c: any) => c !== segment);
+                segment = nextJoint ? nextJoint.children[0] : null;
+                depth++;
+              }
+            }
+          }
         }
       });
 
@@ -1663,6 +1919,9 @@ export function FirstPersonWorld({
       challengerShieldItem: cShieldItem,
       challengerArmor: cArmor,
       challengerLoot: tempBag,
+      challengerNitzName: progress.avatar.name || 'Nitz de Origen',
+      challengerNitzTheme: progress.avatar.colorTheme || 'classic',
+      challengerNitzPhase: progress.phase || 1,
 
       defenderId: rival.id,
       defenderName: rival.username,
@@ -1673,6 +1932,9 @@ export function FirstPersonWorld({
       defenderWeapon: '',
       defenderShieldItem: '',
       defenderArmor: '',
+      defenderNitzName: rival.activeNitzName || 'Nitz de Origen',
+      defenderNitzTheme: rival.avatar?.colorTheme || (rival.activeNitzName === 'Nitz Ígneo' ? 'primeval' : rival.activeNitzName === 'Nitz Abisal' ? 'abyssal' : 'classic'),
+      defenderNitzPhase: rival.phase || 1,
 
       logs: [`⚔️ ¡DUELO DE SABLES SOLICITADO! Has retado a ${rival.username} a un duelo territorial de sables en la bruma.`],
       createdAt: new Date().toISOString()
@@ -1712,6 +1974,9 @@ export function FirstPersonWorld({
         defenderShieldItem: dShieldItem,
         defenderArmor: dArmor,
         defenderLoot: tempBag,
+        defenderNitzName: progress.avatar.name || 'Nitz de Origen',
+        defenderNitzTheme: progress.avatar.colorTheme || 'classic',
+        defenderNitzPhase: progress.phase || 1,
         logs: arrayUnion(`⚔️ ${progress.username || 'Defender'} ha aceptado el duelo. ¡Que comience el combate!`)
       });
       setActiveDuelId(pendingDuelInvite.id);
@@ -1840,17 +2105,73 @@ export function FirstPersonWorld({
     logs.push(cLog);
     logs.push(dLog);
 
-    // Apply heals
-    cHp = Math.min(data.challengerMaxHp, cHp + cHeal);
-    dHp = Math.min(data.defenderMaxHp, dHp + dHeal);
+    // Challenger Nitz Attack
+    const cNitzTheme = data.challengerNitzTheme || 'classic';
+    const cNitzName = data.challengerNitzName || 'Nitz';
+    const cNitzPhase = data.challengerNitzPhase || 1;
+    let cNitzDmg = 15 + cNitzPhase * 5;
+    let cNitzBurn = 0;
+    let cNitzShieldDrain = 0;
+    let cNitzHeal = 0;
+    let cNitzLog = '';
+
+    if (cNitzTheme === 'primeval' || cNitzName.includes('Ígneo')) {
+      cNitzBurn = 1;
+      cNitzLog = `🔥 [Nitz Autómata] El compañero [${cNitzName}] de ${data.challengerName} ataca con [LLAMARADA ASTRAL] (${cNitzDmg} daño + 1 turno de quemadura).`;
+    } else if (cNitzTheme === 'abyssal' || cNitzName.includes('Abisal')) {
+      cNitzShieldDrain = 10;
+      cNitzLog = `🌌 [Nitz Autómata] El compañero [${cNitzName}] de ${data.challengerName} ataca con [SPOIL DE VACÍO] (${cNitzDmg} daño + drena 10 de escudo).`;
+    } else {
+      cNitzDmg = Math.max(5, cNitzDmg - 2);
+      cNitzHeal = 10;
+      cNitzLog = `✨ [Nitz Autómata] El compañero [${cNitzName}] de ${data.challengerName} desata [DESTELLO ARMONIOSO] (${cNitzDmg} daño + cura 10 HP a su dueño).`;
+    }
+
+    // Defender Nitz Attack
+    const dNitzTheme = data.defenderNitzTheme || 'classic';
+    const dNitzName = data.defenderNitzName || 'Nitz';
+    const dNitzPhase = data.defenderNitzPhase || 1;
+    let dNitzDmg = 15 + dNitzPhase * 5;
+    let dNitzBurn = 0;
+    let dNitzShieldDrain = 0;
+    let dNitzHeal = 0;
+    let dNitzLog = '';
+
+    if (dNitzTheme === 'primeval' || dNitzName.includes('Ígneo')) {
+      dNitzBurn = 1;
+      dNitzLog = `🔥 [Nitz Autómata] El compañero [${dNitzName}] de ${data.defenderName} ataca con [LLAMARADA ASTRAL] (${dNitzDmg} daño + 1 turno de quemadura).`;
+    } else if (dNitzTheme === 'abyssal' || dNitzName.includes('Abisal')) {
+      dNitzShieldDrain = 10;
+      dNitzLog = `🌌 [Nitz Autómata] El compañero [${dNitzName}] de ${data.defenderName} ataca con [SPOIL DE VACÍO] (${dNitzDmg} daño + drena 10 de escudo).`;
+    } else {
+      dNitzDmg = Math.max(5, dNitzDmg - 2);
+      dNitzHeal = 10;
+      dNitzLog = `✨ [Nitz Autómata] El compañero [${dNitzName}] de ${data.defenderName} desata [DESTELLO ARMONIOSO] (${dNitzDmg} daño + cura 10 HP a su dueño).`;
+    }
+
+    logs.push(cNitzLog);
+    logs.push(dNitzLog);
+
+    // Apply heals (including Nitz heals)
+    cHp = Math.min(data.challengerMaxHp, cHp + cHeal + cNitzHeal);
+    dHp = Math.min(data.defenderMaxHp, dHp + dHeal + dNitzHeal);
 
     // Apply shields
     cShield = Math.min(data.challengerMaxShield, cShield + cShieldRegen);
     dShield = Math.min(data.defenderMaxShield, dShield + dShieldRegen);
 
-    // Apply damage to Defender
-    if (cDmg > 0) {
-      let finalDmg = cDmg;
+    // Apply Nitz shield drains
+    if (cNitzShieldDrain > 0) dShield = Math.max(0, dShield - cNitzShieldDrain);
+    if (dNitzShieldDrain > 0) cShield = Math.max(0, cShield - dNitzShieldDrain);
+
+    // Apply Nitz burns
+    if (cNitzBurn > 0) dBurn = Math.max(dBurn, cNitzBurn);
+    if (dNitzBurn > 0) cBurn = Math.max(cBurn, dNitzBurn);
+
+    // Apply damage to Defender (Challenger + Nitz)
+    const totalDmgToDefender = cDmg + cNitzDmg;
+    if (totalDmgToDefender > 0) {
+      let finalDmg = totalDmgToDefender;
       if (dMit) finalDmg = Math.floor(finalDmg * 0.5);
       let absorbed = 0;
       if (dShield > 0) {
@@ -1865,12 +2186,13 @@ export function FirstPersonWorld({
         }
       }
       dHp = Math.max(0, dHp - finalDmg);
-      logs.push(`💥 ${data.defenderName} recibe ${cDmg} daño total (${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP).`);
+      logs.push(`💥 ${data.defenderName} recibe ${totalDmgToDefender} daño total (${cDmg} jugador + ${cNitzDmg} companion) [${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP].`);
     }
 
-    // Apply damage to Challenger
-    if (dDmg > 0) {
-      let finalDmg = dDmg;
+    // Apply damage to Challenger (Defender + Nitz)
+    const totalDmgToChallenger = dDmg + dNitzDmg;
+    if (totalDmgToChallenger > 0) {
+      let finalDmg = totalDmgToChallenger;
       if (cMit) finalDmg = Math.floor(finalDmg * 0.5);
       let absorbed = 0;
       if (cShield > 0) {
@@ -1885,7 +2207,7 @@ export function FirstPersonWorld({
         }
       }
       cHp = Math.max(0, cHp - finalDmg);
-      logs.push(`💥 ${data.challengerName} recibe ${dDmg} daño total (${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP).`);
+      logs.push(`💥 ${data.challengerName} recibe ${totalDmgToChallenger} daño total (${dDmg} jugador + ${dNitzDmg} companion) [${absorbed > 0 ? `${absorbed} absorbido por escudo, ` : ''}${finalDmg} restado de HP].`);
     }
 
     // Apply burn damage

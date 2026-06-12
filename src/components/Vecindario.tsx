@@ -2,8 +2,199 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Home, Users, Sparkles, Heart, Plus, Trash2, ArrowLeft, Sofa, Star, MapPin, ZoomIn, RotateCw } from 'lucide-react';
 import * as THREE from 'three';
-import { PlayerProgress, CraftableItem } from '../types';
+import { PlayerProgress, CraftableItem, AvatarCustomization, EmotionName } from '../types';
 import { db, auth, handleFirestoreError, OperationType } from '../firebase';
+
+const EMOTION_COLORS: Record<EmotionName, number> = {
+  Alegría: 0xffd700,    // Gold
+  Amor: 0xff1493,       // Vibrant Pink
+  Ira: 0xff3b30,        // Intense Red-Orange
+  Miedo: 0x4b0082,      // Indigo / Deep Indigo
+  Serenidad: 0x00e1d9,  // Emerald Sky Blue
+  Tristeza: 0x3278ff,   // Royal Blue
+  Confianza: 0x2cd178,  // Soft Emerald Green
+  Sorpresa: 0xff9f29,   // Electric Amber/Orange
+  Orgullo: 0xce7aff,    // Radiating Magenta/Violet
+};
+
+function createDetailedNitzMesh(
+  avatar: AvatarCustomization,
+  dominantEmotion: EmotionName,
+  phase: number,
+  customScale: number = 0.35
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Resolve color
+  let nColor = EMOTION_COLORS[dominantEmotion] || 0xfdcc15;
+  if (avatar.colorTheme === 'abyssal') nColor = 0x8b5cf6;
+  else if (avatar.colorTheme === 'solstice') nColor = 0xf59e0b;
+  else if (avatar.colorTheme === 'primeval') nColor = 0xef4444;
+
+  // 1. Body
+  const bodyGeometry = new THREE.SphereGeometry(1.2, 24, 24);
+  const bodyMaterial = new THREE.MeshPhongMaterial({
+    color: 0xf5f8ff,
+    emissive: 0x111422,
+    shininess: 90,
+  });
+  const bodyMesh = new THREE.Mesh(bodyGeometry, bodyMaterial);
+  bodyMesh.castShadow = true;
+  bodyMesh.receiveShadow = true;
+  group.add(bodyMesh);
+
+  // 2. Eyes
+  const eyesGroup = new THREE.Group();
+  eyesGroup.position.set(0, 0.25, 1.0);
+  group.add(eyesGroup);
+
+  const eyeGeo = new THREE.SphereGeometry(0.18, 16, 16);
+  const eyeMat = new THREE.MeshPhongMaterial({ color: 0x070912, shininess: 120 });
+  const leftEyeSocket = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEyeSocket.position.set(-0.45, 0, 0.1);
+  leftEyeSocket.scale.set(1.2, 1, 0.5);
+  const rightEyeSocket = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEyeSocket.position.set(0.45, 0, 0.1);
+  rightEyeSocket.scale.set(1.2, 1, 0.5);
+  eyesGroup.add(leftEyeSocket, rightEyeSocket);
+
+  // Pupils (dynamically colored by emotion/theme)
+  const pupilGeo = new THREE.SphereGeometry(0.08, 12, 12);
+  const pupilMat = new THREE.MeshBasicMaterial({ color: nColor });
+  const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  leftPupil.position.set(-0.45, 0, 0.18);
+  leftPupil.scale.set(1.1, 1.3, 0.4);
+  const rightPupil = new THREE.Mesh(pupilGeo, pupilMat);
+  rightPupil.position.set(0.45, 0, 0.18);
+  rightPupil.scale.set(1.1, 1.3, 0.4);
+  eyesGroup.add(leftPupil, rightPupil);
+
+  // Shine Spots
+  const shineGeo = new THREE.SphereGeometry(0.03, 8, 8);
+  const shineMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  const shineL = new THREE.Mesh(shineGeo, shineMat);
+  shineL.position.set(-0.42, 0.05, 0.23);
+  const shineR = new THREE.Mesh(shineGeo, shineMat);
+  shineR.position.set(0.48, 0.05, 0.23);
+  eyesGroup.add(shineL, shineR);
+
+  // 3. Dynamic Tail
+  const tailGroup = new THREE.Group();
+  tailGroup.position.set(0, -0.6, -1.0);
+  group.add(tailGroup);
+
+  const segmentCount = 6;
+  const segmentRadius = 0.18;
+  let currentParent: THREE.Object3D = tailGroup;
+  for (let i = 0; i < segmentCount; i++) {
+    const sizeScale = 1.0 - (i / segmentCount) * 0.5;
+    const length = 0.35;
+    const tailSegGeo = new THREE.ConeGeometry(segmentRadius * sizeScale, length, 12);
+    const tailSegMat = new THREE.MeshPhongMaterial({
+      color: 0xf5f8ff,
+      shininess: 60,
+    });
+    const tailSeg = new THREE.Mesh(tailSegGeo, tailSegMat);
+    tailSeg.rotation.x = -Math.PI / 2;
+    tailSeg.position.set(0, 0, -length * 0.6);
+
+    const joint = new THREE.Group();
+    joint.position.set(0, 0, i === 0 ? 0 : -length * 0.9);
+    joint.add(tailSeg);
+    currentParent.add(joint);
+    currentParent = joint;
+  }
+
+  // 4. Ears (Phase 2+)
+  const leftEarJoint = new THREE.Group();
+  leftEarJoint.position.set(-0.6, 0.9, 0.2);
+  leftEarJoint.rotation.set(0, 0.2, -0.4);
+  group.add(leftEarJoint);
+
+  const rightEarJoint = new THREE.Group();
+  rightEarJoint.position.set(0.6, 0.9, 0.2);
+  rightEarJoint.rotation.set(0, -0.2, 0.4);
+  group.add(rightEarJoint);
+
+  const earGeo = new THREE.ConeGeometry(0.28, 1.1, 12);
+  earGeo.translate(0, 0.55, 0);
+  const earInnerMat = new THREE.MeshPhongMaterial({ color: 0xff69b4 });
+  const earOuterMat = new THREE.MeshPhongMaterial({ color: 0xf5f8ff });
+
+  const leftEar = new THREE.Mesh(earGeo, earOuterMat);
+  const leftEarInner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.9, 12).translate(0, 0.45, 0.05), earInnerMat);
+  leftEarJoint.add(leftEar, leftEarInner);
+
+  const rightEar = new THREE.Mesh(earGeo, earOuterMat);
+  const rightEarInner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.9, 12).translate(0, 0.45, 0.05), earInnerMat);
+  rightEarJoint.add(rightEar, rightEarInner);
+
+  if (phase < 2) {
+    leftEarJoint.visible = false;
+    rightEarJoint.visible = false;
+  }
+
+  // 5. Crown / Halo / Accessories (Phase 5+ or specific accessory)
+  const crownMat = new THREE.MeshPhongMaterial({
+    color: 0xffd700,
+    emissive: 0x5a4500,
+    shininess: 120,
+  });
+  const crownGeo = new THREE.TorusGeometry(0.7, 0.05, 8, 24);
+  const crownMesh = new THREE.Mesh(crownGeo, crownMat);
+  crownMesh.rotation.x = Math.PI / 2.2;
+  crownMesh.position.set(0, 1.7, -0.3);
+  group.add(crownMesh);
+
+  if (phase >= 4 || avatar.accessory === 'halo') {
+    crownMesh.visible = true;
+  } else if (avatar.accessory === 'horn_gold') {
+    crownMesh.visible = true;
+    crownMesh.material = new THREE.MeshPhongMaterial({ color: 0xffaa00, shininess: 200 });
+  } else if (avatar.accessory === 'ribbon') {
+    crownMesh.visible = true;
+    crownMesh.material = new THREE.MeshPhongMaterial({ color: 0xff3b90, shininess: 100 });
+  } else {
+    crownMesh.visible = false;
+  }
+
+  // 6. Aura Outer Shell
+  const auraGeo = new THREE.SphereGeometry(1.8, 24, 24);
+  const auraMat = new THREE.MeshBasicMaterial({
+    color: nColor,
+    transparent: true,
+    opacity: 0.15,
+    side: THREE.BackSide,
+  });
+  const auraMesh = new THREE.Mesh(auraGeo, auraMat);
+  group.add(auraMesh);
+
+  // Set visual scale
+  const evolutionScale = 0.75 + phase * 0.22;
+  group.scale.setScalar(customScale * evolutionScale);
+
+  // Store references in userData for animation access in tick loops
+  group.userData = {
+    leftEar: leftEarJoint,
+    rightEar: rightEarJoint,
+    tail: tailGroup,
+    aura: auraMesh,
+    body: bodyMesh,
+    crown: crownMesh,
+    leftPupil,
+    rightPupil,
+    leftEyeSocket,
+    rightEyeSocket,
+    colorTheme: avatar.colorTheme,
+    dominantEmotion,
+    phase,
+    accessory: avatar.accessory,
+  };
+
+  return group;
+}
+
+const dbRefPlaceholder = db;
 import { collection, doc, query, limit, onSnapshot, getDoc, setDoc, updateDoc, increment } from 'firebase/firestore';
 
 interface VecindarioProps {
@@ -412,35 +603,59 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
     scene.add(wallR);
 
     // Floating Nitz core avatar at height center
-    const nitzGeo = new THREE.DodecahedronGeometry(0.55, 1);
-    let nColor = 0xdec1ac; // classic
+    let nitzMesh: THREE.Group | THREE.Mesh | null = null;
     if (visitedPlot.isPlayer) {
-      if (progress.avatar.colorTheme === 'abyssal') nColor = 0xa855f7;
-      if (progress.avatar.colorTheme === 'solstice') nColor = 0xf59e0b;
-      if (progress.avatar.colorTheme === 'primeval') nColor = 0xef4444;
+      let maxName: EmotionName = 'Alegría';
+      let maxValue = -1;
+      (Object.keys(progress.emotions) as EmotionName[]).forEach((key) => {
+        if (progress.emotions[key] > maxValue) {
+          maxValue = progress.emotions[key];
+          maxName = key;
+        }
+      });
+      
+      nitzMesh = createDetailedNitzMesh(
+        progress.avatar,
+        maxName,
+        progress.phase,
+        0.35
+      );
     } else {
-      if (visitedPlot.ownerName === 'Guardián_Luz') nColor = 0xf59e0b;
-      if (visitedPlot.ownerName === 'AuraAnime') nColor = 0xec4899;
-      if (visitedPlot.ownerName === 'Stellaria') nColor = 0xa855f7;
+      let mockAvatar: AvatarCustomization = {
+        name: visitedPlot.nitzName || 'Nitz Vecino',
+        accessory: 'none',
+        auraType: 'none',
+        colorTheme: 'classic',
+        clothing: 'none'
+      };
+      let mockEmotion: EmotionName = 'Alegría';
+      let mockPhase = 1;
+
+      if (visitedPlot.ownerName === 'Guardián_Luz') {
+        mockAvatar.accessory = 'halo';
+        mockAvatar.colorTheme = 'solstice';
+        mockEmotion = 'Orgullo';
+        mockPhase = 5;
+      } else if (visitedPlot.ownerName === 'AuraAnime') {
+        mockAvatar.accessory = 'ribbon';
+        mockEmotion = 'Amor';
+        mockPhase = 3;
+      } else if (visitedPlot.ownerName === 'Stellaria') {
+        mockAvatar.colorTheme = 'abyssal';
+        mockEmotion = 'Serenidad';
+        mockPhase = 4;
+      }
+
+      nitzMesh = createDetailedNitzMesh(
+        mockAvatar,
+        mockEmotion,
+        mockPhase,
+        0.35
+      );
     }
-
-    const nitzMat = new THREE.MeshStandardMaterial({ 
-      color: nColor, 
-      roughness: 0.1,
-      metalness: 0.2,
-      emissive: nColor,
-      emissiveIntensity: 0.6
-    });
-
-    const nitzMesh = new THREE.Mesh(nitzGeo, nitzMat);
+    
     nitzMesh.position.set(0, 1.3, 0);
     scene.add(nitzMesh);
-
-    // Rotating ring
-    const ringGeo = new THREE.TorusGeometry(0.78, 0.04, 6, 24);
-    const ringMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: nColor, transparent: true, opacity: 0.8 }));
-    ringMesh.rotation.x = Math.PI / 2;
-    nitzMesh.add(ringMesh);
 
     // COORDINATE SLOTS 1 to 5
     const SLOT_COORDS: Record<number, THREE.Vector3> = {
@@ -539,7 +754,52 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
       if (nitzMesh) {
         nitzMesh.position.y = 1.35 + Math.sin(t * 2.8) * 0.15;
         nitzMesh.rotation.y += 0.015;
-        nitzMesh.rotation.x = Math.sin(t) * 0.08;
+
+        // Detailed animations from userData
+        const ud = nitzMesh.userData;
+        if (ud && ud.body) {
+          // 1. Ear wiggles based on phase
+          if (ud.leftEar && ud.rightEar && ud.phase >= 2) {
+            ud.leftEar.rotation.z = -0.4 + Math.sin(t * 4) * 0.08;
+            ud.rightEar.rotation.z = 0.4 - Math.sin(t * 4) * 0.08;
+          }
+          // 2. Elegant crown float
+          if (ud.crown && ud.crown.visible) {
+            ud.crown.position.y = 1.5 + Math.sin(t * 1.5) * 0.08;
+            ud.crown.rotation.y = t * 0.8;
+          }
+          // 3. Body breathing
+          const breath = 1.0 + Math.sin(t * 1.5) * 0.04;
+          ud.body.scale.set(breath, 1.0 / breath, breath);
+          // 4. Aura pulsing
+          if (ud.aura) {
+            const pulse = 1.05 + Math.sin(t * 4) * 0.06;
+            ud.aura.scale.set(pulse, pulse, pulse);
+          }
+          // 5. Tail wagging based on emotional speed
+          if (ud.tail) {
+            let segment = ud.tail.children[0];
+            let depth = 0;
+            let speedMultiplier = 6.0;
+            let amplitude = 0.25;
+            if (ud.dominantEmotion === 'Ira') {
+              speedMultiplier = 8.5;
+              amplitude = 0.35;
+            } else if (ud.dominantEmotion === 'Tristeza') {
+              speedMultiplier = 1.5;
+              amplitude = 0.08;
+            }
+            while (segment && depth < 6) {
+              const waveAngle = Math.sin(t * speedMultiplier - depth * 0.5) * amplitude;
+              segment.rotation.z = waveAngle;
+              segment.rotation.y = Math.cos(t * 1.5 + depth * 0.3) * 0.05;
+              
+              const nextJoint = segment.parent?.children.find((c: any) => c !== segment);
+              segment = nextJoint ? nextJoint.children[0] : null;
+              depth++;
+            }
+          }
+        }
       }
 
       // Pulse empty celestial holographic pads
