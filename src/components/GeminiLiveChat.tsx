@@ -65,6 +65,11 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
         throw new Error("No VITE_GEMINI_API_KEY set in .env");
       }
 
+      // 1. Create AudioContext synchronously on user click to bypass Chrome Autoplay Policy
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
+      await audioCtx.resume(); // Force start
+      audioCtxRef.current = audioCtx;
+
       const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
       const ws = new WebSocket(wsUrl);
       wsRef.current = ws;
@@ -85,7 +90,7 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
         ws.send(JSON.stringify(setupMessage));
         
         // Setup Audio after WebSocket connects
-        setupAudio(ws);
+        setupAudio(ws, audioCtx);
       };
 
       ws.onmessage = (event) => {
@@ -157,10 +162,7 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
     source.start();
   };
 
-  const setupAudio = async (ws: WebSocket) => {
-    const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
-    audioCtxRef.current = audioCtx;
-
+  const setupAudio = async (ws: WebSocket, audioCtx: AudioContext) => {
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
