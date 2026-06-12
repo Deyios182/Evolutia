@@ -358,7 +358,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
         plotsList.push({
           id: docSnap.id,
           ownerName: data.username || 'Guardián',
-          title: \`Cabaña de \${data.username || 'Guardián'}\`,
+          title: `Cabaña de ${data.username || 'Guardián'}`,
           nitzName: data.avatar?.name || 'Nitz Místico',
           emotions: data.dominantEmotion || 'Serenidad',
           isPlayer: false,
@@ -434,7 +434,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
       } catch (err) {
         console.error("Error giving companion heart:", err);
         try {
-          handleFirestoreError(err, OperationType.WRITE, \`users/\${plotId}\`);
+          handleFirestoreError(err, OperationType.WRITE, `users/${plotId}`);
         } catch (e) {
           // Keep it caught so it doesn't interrupt game play flow
         }

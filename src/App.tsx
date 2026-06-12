@@ -236,6 +236,16 @@ export default function App() {
     }, 4000);
   };
 
+  const requestFullScreen = () => {
+    try {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen().catch(err => {
+          console.warn(`Error attempting to enable fullscreen: ${err.message}`);
+        });
+      }
+    } catch (e) {}
+  };
+
   const handleOnboardingComplete = async (username: string, avatar: AvatarCustomization) => {
     const updated: PlayerProgress = {
       ...progress,
@@ -245,6 +255,7 @@ export default function App() {
     };
     await saveProgress(updated);
     setCurrentView('first_person');
+    requestFullScreen();
     triggerNotification(`¡Bienvenido Guardián ${username}! Tu Nitz ha despertado.`);
   };
 
@@ -478,7 +489,7 @@ export default function App() {
             {/* View Switcher Controls */}
             <nav className="flex items-center gap-1.5 flex-wrap">
               <button
-                onClick={() => setCurrentView('first_person')}
+                onClick={() => { setCurrentView('first_person'); requestFullScreen(); }}
                 className={`px-3 md:px-5 py-2 rounded-full text-xs font-extrabold transition-all flex items-center gap-1.5 ${
                   currentView === 'first_person' 
                     ? 'bg-gradient-to-r from-amber-400 to-[#dec1ac] text-slate-950 font-black shadow-[0_0_15px_rgba(222,193,172,0.4)]' 
