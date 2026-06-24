@@ -538,6 +538,169 @@ function createDetailedEnemyMesh(type: string): THREE.Group {
   return group;
 }
 
+// Procedural sky dome canvas texture generator
+function createProceduralSkyTexture(mapType: FPMapType): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  const gradient = ctx.createLinearGradient(0, 0, 0, 512);
+
+  if (mapType === 'cabin') {
+    // Warm interior ceiling glow
+    gradient.addColorStop(0, '#2e1910');
+    gradient.addColorStop(1, '#0c0705');
+  } else if (mapType === 'neighborhood') {
+    // Dawn/Twilight sky
+    gradient.addColorStop(0, '#0c0d1b');
+    gradient.addColorStop(0.5, '#1e1c3a');
+    gradient.addColorStop(1, '#3b2f4c');
+  } else if (mapType === 'lobby') {
+    // Starry outer cosmos sky
+    gradient.addColorStop(0, '#030008');
+    gradient.addColorStop(0.5, '#0c0a1e');
+    gradient.addColorStop(1, '#1b1432');
+  } else if (mapType === 'map1') {
+    // Magical forest deep green sky
+    gradient.addColorStop(0, '#021612');
+    gradient.addColorStop(0.6, '#0b3026');
+    gradient.addColorStop(1, '#165842');
+  } else if (mapType === 'map2') {
+    // Sapphire star dust sky
+    gradient.addColorStop(0, '#020617');
+    gradient.addColorStop(0.5, '#0f172a');
+    gradient.addColorStop(1, '#1e293b');
+  } else if (mapType === 'map3') {
+    // Volcanic red void sky
+    gradient.addColorStop(0, '#0f0206');
+    gradient.addColorStop(0.5, '#2e0813');
+    gradient.addColorStop(1, '#581c2b');
+  }
+
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, 512, 512);
+
+  // Add stars for non-cabin maps
+  if (mapType !== 'cabin') {
+    ctx.fillStyle = '#ffffff';
+    for (let i = 0; i < 150; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 250;
+      const r = Math.random() * 1.5;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  return texture;
+}
+
+// Procedural detailed portal gates
+function createDetailedGateMesh(type: string): THREE.Group {
+  const group = new THREE.Group();
+
+  if (type === 'door_cabin' || type === 'door_vecindario') {
+    // Wooden door
+    const frameMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
+    const postL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.0, 0.2), frameMat);
+    postL.position.set(-1.0, 1.5, 0);
+    const postR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.0, 0.2), frameMat);
+    postR.position.set(1.0, 1.5, 0);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.2, 0.2), frameMat);
+    lintel.position.set(0, 3.0, 0);
+    group.add(postL, postR, lintel);
+
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.8, 0.1), doorMat);
+    panel.position.set(0, 1.4, 0);
+    group.add(panel);
+
+    const handleMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), handleMat);
+    knob.position.set(0.7, 1.3, 0.08);
+    group.add(knob);
+
+  } else {
+    // Magic/stone archways
+    let stoneColor = 0x475569;
+    let vortexColor = 0x6366f1;
+
+    if (type === 'door_map1') {
+      stoneColor = 0x14532d;
+      vortexColor = 0x10b981;
+    } else if (type === 'door_map2') {
+      stoneColor = 0x1e3a8a;
+      vortexColor = 0x0ea5e9;
+    } else if (type === 'door_map3') {
+      stoneColor = 0x1f1625;
+      vortexColor = 0xef4444;
+    }
+
+    const archMat = new THREE.MeshStandardMaterial({ color: stoneColor, roughness: 0.8, metalness: 0.1 });
+    const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.5, 0.4), archMat);
+    p1.position.set(-1.2, 1.75, 0);
+    const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.5, 0.4), archMat);
+    p2.position.set(1.2, 1.75, 0);
+    const top = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.4, 0.4), archMat);
+    top.position.set(0, 3.5, 0);
+    group.add(p1, p2, top);
+
+    const vortexGeo = new THREE.RingGeometry(0.1, 1.0, 32);
+    const vortexMat = new THREE.MeshBasicMaterial({
+      color: vortexColor,
+      side: THREE.DoubleSide,
+      transparent: true,
+      opacity: 0.75
+    });
+    const vortex = new THREE.Mesh(vortexGeo, vortexMat);
+    vortex.position.set(0, 1.75, 0);
+    group.add(vortex);
+
+    group.userData = { vortex };
+
+    if (type === 'door_map1') {
+      const leafMat = new THREE.MeshStandardMaterial({ color: 0x047857, roughness: 0.6 });
+      const leaf1 = new THREE.Mesh(new THREE.SphereGeometry(0.35, 8, 8), leafMat);
+      leaf1.position.set(-1.0, 3.5, 0.15);
+      const leaf2 = new THREE.Mesh(new THREE.SphereGeometry(0.4, 8, 8), leafMat);
+      leaf2.position.set(1.0, 3.5, -0.15);
+      const leaf3 = new THREE.Mesh(new THREE.SphereGeometry(0.45, 8, 8), leafMat);
+      leaf3.position.set(0, 3.8, 0);
+      group.add(leaf1, leaf2, leaf3);
+    } else if (type === 'door_map2') {
+      const crystalMat = new THREE.MeshStandardMaterial({ color: 0x38bdf8, roughness: 0.1, metalness: 0.9, emissive: 0x0369a1 });
+      const cry1 = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.6, 4), crystalMat);
+      cry1.position.set(-1.3, 3.2, 0.2);
+      cry1.rotation.z = -0.3;
+      const cry2 = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.6, 4), crystalMat);
+      cry2.position.set(1.3, 3.2, 0.2);
+      cry2.rotation.z = 0.3;
+      group.add(cry1, cry2);
+    } else if (type === 'door_map3') {
+      const spikeMat = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.3, metalness: 0.8 });
+      const sp1 = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.8, 4), spikeMat);
+      sp1.position.set(-1.2, 3.6, 0);
+      sp1.rotation.z = 0.5;
+      const sp2 = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.8, 4), spikeMat);
+      sp2.position.set(1.2, 3.6, 0);
+      sp2.rotation.z = -0.5;
+      group.add(sp1, sp2);
+    }
+  }
+
+  group.traverse(child => {
+    if (child instanceof THREE.Mesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  return group;
+}
+
 import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, arrayUnion, addDoc } from 'firebase/firestore';
 
 // Subcomponents to render as immersive overlays
@@ -695,6 +858,8 @@ export function FirstPersonWorld({
   const activeNodesRef = useRef<InteractiveNode3D[]>([]);
   const tempBagRef = useRef<GatheringInventory>(tempBag);
   const maxWeightRef = useRef<number>(30);
+  const extractionXRef = useRef<number>(0);
+  const extractionZRef = useRef<number>(-50);
 
   // Synchronize state changes to refs
   useEffect(() => {
@@ -1030,75 +1195,104 @@ export function FirstPersonWorld({
       ];
       setPlayerX(0);
       setPlayerZ(4);
+      playerXRef.current = 0;
+      playerZRef.current = 4;
     } else if (currentMap === 'neighborhood') {
       newNodes = [
-        { id: 'door_back_cabin', name: 'Tu Cabaña', x: 0, z: 9, type: 'door_cabin', label: '🏠 Entrar a tu Cabaña' },
-        { id: 'road_to_lobby', name: 'Senda al Templo del Lobby', x: 0, z: -25, type: 'door_lobby', label: '💎 Viajar al Lobby Central' },
+        { id: 'door_back_cabin', name: 'Tu Cabaña', x: 0, z: 25, type: 'door_cabin', label: '🏠 Entrar a tu Cabaña' },
+        { id: 'road_to_lobby', name: 'Senda al Templo del Lobby', x: 0, z: -55, type: 'door_lobby', label: '💎 Viajar al Lobby Central' },
         // Static interactive houses of neighbors
-        { id: 'plot_luz', name: 'C Cathedral de Guardián_Luz', x: -14, z: -6, type: 'house_plot', plotOwnerId: 'plot_luz', label: '🏰 Visitar / Alabar Nitz de Guardián_Luz' },
-        { id: 'plot_anime', name: 'Cabaña de AuraAnime', x: 14, z: -6, type: 'house_plot', plotOwnerId: 'plot_anime', label: '🌸 Visitar / Alabar Nitz de AuraAnime' },
-        { id: 'plot_stellaria', name: 'Cabaña de Stellaria', x: -10, z: -18, type: 'house_plot', plotOwnerId: 'plot_stellaria', label: '🌌 Visitar / Alabar Nitz de Stellaria' }
+        { id: 'plot_luz', name: 'C Cathedral de Guardián_Luz', x: -30, z: -10, type: 'house_plot', plotOwnerId: 'plot_luz', label: '🏰 Visitar / Alabar Nitz de Guardián_Luz' },
+        { id: 'plot_anime', name: 'Cabaña de AuraAnime', x: 30, z: -10, type: 'house_plot', plotOwnerId: 'plot_anime', label: '🌸 Visitar / Alabar Nitz de AuraAnime' },
+        { id: 'plot_stellaria', name: 'Cabaña de Stellaria', x: -20, z: -35, type: 'house_plot', plotOwnerId: 'plot_stellaria', label: '🌌 Visitar / Alabar Nitz de Stellaria' }
       ];
       setPlayerX(0);
+      playerXRef.current = 0;
       if (prevMap === 'lobby') {
-        setPlayerZ(-22); // Spawn near road_to_lobby (which is at z: -25)
+        setPlayerZ(-50); // Spawn near road_to_lobby (which is at z: -55)
+        playerZRef.current = -50;
       } else {
-        setPlayerZ(7); // Spawn near door_back_cabin (which is at z: 9)
+        setPlayerZ(20); // Spawn near door_back_cabin (which is at z: 25)
+        playerZRef.current = 20;
       }
     } else if (currentMap === 'lobby') {
       newNodes = [
-        { id: 'marketplace', name: 'Gran Mercado Global', x: 8, z: 0, type: 'marketplace', label: '⚖️ Acceder al Mercado Vivo (Comprar/Vender)' },
-        { id: 'gate_vecindario', name: 'Paso de Regreso a Vecindarios', x: 0, z: 12, type: 'door_vecindario', label: '🏘️ Regresar al Vecindario' },
-        { id: 'gate_world1', name: 'Portal al Mapa 1: Bosque Seguro', x: -12, z: -8, type: 'door_map1', label: '🌲 Viajar al Bosque Seguro (Fácil/Seguro)' },
-        { id: 'gate_world2', name: 'Portal al Mapa 2: Cantera de Caos', x: 12, z: -8, type: 'door_map2', label: '💎 Viajar al Cantera Estelar (Medio/Materiales)' },
-        { id: 'gate_world3', name: 'Portal Celestial al Mapa 3: Zona de Bruma de Sangre', x: 0, z: -18, type: 'door_map3', label: '💀 Viajar a la Zona Roja (Elite/PvP / Full Loot!)' },
-        { id: 'portal_arena', name: 'Portal de Duelos de Arena vs Rogue Nitz', x: 0, z: -2, type: 'door_arena', label: '⚔️ Iniciar Arena de Combates vs Rogue Nitz' }
+        { id: 'marketplace', name: 'Gran Mercado Global', x: 12, z: 0, type: 'marketplace', label: '⚖️ Acceder al Mercado Vivo (Comprar/Vender)' },
+        { id: 'gate_vecindario', name: 'Paso de Regreso a Vecindarios', x: 0, z: 45, type: 'door_vecindario', label: '🏘️ Regresar al Vecindario' },
+        { id: 'gate_world1', name: 'Portal al Mapa 1: Bosque Seguro', x: -35, z: -20, type: 'door_map1', label: '🌲 Viajar al Bosque Seguro (Fácil/Seguro)' },
+        { id: 'gate_world2', name: 'Portal al Mapa 2: Cantera de Caos', x: 35, z: -20, type: 'door_map2', label: '💎 Viajar al Cantera Estelar (Medio/Materiales)' },
+        { id: 'gate_world3', name: 'Portal Celestial al Mapa 3: Zona de Bruma de Sangre', x: 0, z: -45, type: 'door_map3', label: '💀 Viajar a la Zona Roja (Elite/PvP / Full Loot!)' },
+        { id: 'portal_arena', name: 'Portal de Duelos de Arena vs Rogue Nitz', x: 0, z: -5, type: 'door_arena', label: '⚔️ Iniciar Arena de Combates vs Rogue Nitz' }
       ];
       if (prevMap === 'neighborhood') {
         setPlayerX(0);
-        setPlayerZ(9.5); // near gate_vecindario (z: 12)
+        setPlayerZ(40); // near gate_vecindario (z: 45)
+        playerXRef.current = 0;
+        playerZRef.current = 40;
       } else if (prevMap === 'map1') {
-        setPlayerX(-10); // near gate_world1 (x: -12, z: -8)
-        setPlayerZ(-8);
+        setPlayerX(-35); // near gate_world1 (x: -35, z: -20)
+        setPlayerZ(-12); // spawned in front of the portal
+        playerXRef.current = -35;
+        playerZRef.current = -12;
       } else if (prevMap === 'map2') {
-        setPlayerX(10); // near gate_world2 (x: 12, z: -8)
-        setPlayerZ(-8);
+        setPlayerX(35); // near gate_world2 (x: 35, z: -20)
+        setPlayerZ(-12); // spawned in front of the portal
+        playerXRef.current = 35;
+        playerZRef.current = -12;
       } else if (prevMap === 'map3') {
-        setPlayerX(0); // near gate_world3 (x: 0, z: -18)
-        setPlayerZ(-15);
+        setPlayerX(0); // near gate_world3 (x: 0, z: -45)
+        setPlayerZ(-35); // spawned in front of the portal
+        playerXRef.current = 0;
+        playerZRef.current = -35;
       } else {
         setPlayerX(0);
         setPlayerZ(10);
+        playerXRef.current = 0;
+        playerZRef.current = 10;
       }
     } else if (currentMap === 'map1') {
       // Safe gathering field
       newNodes = [
-        { id: 'map1_exit', name: 'Portal de Escape al Lobby', x: 0, z: 18, type: 'door_lobby', label: '🚪 Regresar al Lobby Seguro' },
-        { id: 'tr_c1', name: 'Arbusto Centelleante Común', x: -8, z: -5, type: 'tree', rarity: 'common', clicksRequired: 3, clicksCurrent: 0, label: '🌲 Recolectar Madera Común (+4 EXP)' },
-        { id: 'tr_r2', name: 'Roble Ancestral de Aura', x: 8, z: -8, type: 'tree', rarity: 'rare', clicksRequired: 6, clicksCurrent: 0, label: '✨ Recolectar Madera Rara (+10 EXP)' },
-        { id: 'tr_e1', name: 'Esencia de Bosque Resplandeciente', x: -4, z: -12, type: 'tree', rarity: 'epic', clicksRequired: 10, clicksCurrent: 0, label: '🔮 Recolectar Esencia Épica (+22 EXP)' }
+        { id: 'map1_exit', name: 'Portal de Escape al Lobby', x: 0, z: 80, type: 'door_lobby', label: '🚪 Regresar al Lobby Seguro' },
+        { id: 'tr_c1', name: 'Arbusto Centelleante Común', x: -25, z: 10, type: 'tree', rarity: 'common', clicksRequired: 3, clicksCurrent: 0, label: '🌲 Recolectar Madera Común (+4 EXP)' },
+        { id: 'tr_r2', name: 'Roble Ancestral de Aura', x: 25, z: -15, type: 'tree', rarity: 'rare', clicksRequired: 6, clicksCurrent: 0, label: '✨ Recolectar Madera Rara (+10 EXP)' },
+        { id: 'tr_e1', name: 'Esencia de Bosque Resplandeciente', x: -10, z: -45, type: 'tree', rarity: 'epic', clicksRequired: 10, clicksCurrent: 0, label: '🔮 Recolectar Esencia Épica (+22 EXP)' }
       ];
       setPlayerX(0);
-      setPlayerZ(15);
+      setPlayerZ(70);
+      playerXRef.current = 0;
+      playerZRef.current = 70;
     } else if (currentMap === 'map2') {
       newNodes = [
-        { id: 'map2_exit', name: 'Portal de Escape al Lobby', x: 0, z: 18, type: 'door_lobby', label: '🚪 Regresar al Lobby Seguro' },
-        { id: 'or_c1', name: 'Fisura de Piedra Celestial', x: -10, z: -5, type: 'ore', rarity: 'common', clicksRequired: 4, clicksCurrent: 0, label: '🪨 Extraer Piedra Estelar (+4 EXP)' },
-        { id: 'or_r1', name: 'Beta de Vena Metálica', x: 10, z: -7, type: 'ore', rarity: 'rare', clicksRequired: 8, clicksCurrent: 0, label: '⚡ Extraer Veta Metálica Rara (+10 EXP)' },
-        { id: 'or_e1', name: 'Esencia de Falla Cósmica', x: 0, z: -11, type: 'tree', rarity: 'epic', clicksRequired: 11, clicksCurrent: 0, label: '🔮 Recolectar Esencia de Cuarzo Épico (+22 EXP)' }
+        { id: 'map2_exit', name: 'Portal de Escape al Lobby', x: 0, z: 80, type: 'door_lobby', label: '🚪 Regresar al Lobby Seguro' },
+        { id: 'or_c1', name: 'Fisura de Piedra Celestial', x: -30, z: 15, type: 'ore', rarity: 'common', clicksRequired: 4, clicksCurrent: 0, label: '🪨 Extraer Piedra Estelar (+4 EXP)' },
+        { id: 'or_r1', name: 'Beta de Vena Metálica', x: 30, z: -10, type: 'ore', rarity: 'rare', clicksRequired: 8, clicksCurrent: 0, label: '⚡ Extraer Veta Metálica Rara (+10 EXP)' },
+        { id: 'or_e1', name: 'Esencia de Falla Cósmica', x: 0, z: -40, type: 'tree', rarity: 'epic', clicksRequired: 11, clicksCurrent: 0, label: '🔮 Recolectar Esencia de Cuarzo Épico (+22 EXP)' }
       ];
       setPlayerX(0);
-      setPlayerZ(15);
+      setPlayerZ(70);
+      playerXRef.current = 0;
+      playerZRef.current = 70;
     } else if (currentMap === 'map3') {
       // Hard dangerous PvP Zone
       newNodes = [
-        { id: 'map3_exit', name: 'Portal de Salvación al Lobby', x: 0, z: 20, type: 'door_lobby', label: '🚪 Regresar al Lobby de Enlace (Saca tu mochila!)' },
-        { id: 'or_ep1', name: 'Hierro del Abismo Destructor', x: -12, z: -6, type: 'ore', rarity: 'epic', clicksRequired: 12, clicksCurrent: 0, label: '🔥 Extraer Hierro del Abismo Épico (+22 EXP)' },
-        { id: 'or_ld1', name: 'Estatua del Alba Legendaria', x: 12, z: -12, type: 'ore', rarity: 'legendary', clicksRequired: 18, clicksCurrent: 0, label: '👑 Extraer Cristal de Alba Legendario (+45 EXP!)' },
-        { id: 'tr_ld1', name: 'Neblina Astral de Caos', x: 0, z: -15, type: 'tree', rarity: 'legendary', clicksRequired: 17, clicksCurrent: 0, label: '🌌 Condensar Neblina Estelar Legendaria (+45 EXP!)' }
+        { id: 'map3_exit', name: 'Portal de Salvación al Lobby', x: 0, z: 80, type: 'door_lobby', label: '🚪 Regresar al Lobby de Enlace (Saca tu mochila!)' },
+        { id: 'or_ep1', name: 'Hierro del Abismo Destructor', x: -35, z: 10, type: 'ore', rarity: 'epic', clicksRequired: 12, clicksCurrent: 0, label: '🔥 Extraer Hierro del Abismo Épico (+22 EXP)' },
+        { id: 'or_ld1', name: 'Estatua del Alba Legendaria', x: 35, z: -20, type: 'ore', rarity: 'legendary', clicksRequired: 18, clicksCurrent: 0, label: '👑 Extraer Cristal de Alba Legendario (+45 EXP!)' },
+        { id: 'tr_ld1', name: 'Neblina Astral de Caos', x: 0, z: -45, type: 'tree', rarity: 'legendary', clicksRequired: 17, clicksCurrent: 0, label: '🌌 Condensar Neblina Estelar Legendaria (+45 EXP!)' }
       ];
+      // Randomize extraction coordinates
+      extractionXRef.current = (Math.random() - 0.5) * 140;
+      extractionZRef.current = (Math.random() - 0.5) * 140;
+      while (Math.sqrt(Math.pow(extractionXRef.current, 2) + Math.pow(extractionZRef.current - 70, 2)) < 30) {
+        extractionXRef.current = (Math.random() - 0.5) * 140;
+        extractionZRef.current = (Math.random() - 0.5) * 140;
+      }
+
       setPlayerX(0);
-      setPlayerZ(17);
+      setPlayerZ(70);
+      playerXRef.current = 0;
+      playerZRef.current = 70;
     }
     setActiveNodes(newNodes);
     setNearNode(null);
@@ -1404,8 +1598,8 @@ export function FirstPersonWorld({
       return;
     }
 
-    // Check if player moved out of extraction zone (Faro coordinates x:0, z:-10)
-    const distanceToBeacon = Math.sqrt(Math.pow(playerX, 2) + Math.pow(playerZ - (-10), 2));
+    // Check if player moved out of extraction zone
+    const distanceToBeacon = Math.sqrt(Math.pow(playerX - extractionXRef.current, 2) + Math.pow(playerZ - extractionZRef.current, 2));
     if (distanceToBeacon > 5.5) {
       setExtractionActive(false);
       setExtractionTimeLeft(0);
@@ -1463,7 +1657,7 @@ export function FirstPersonWorld({
     }
 
     // Camera
-    const camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 100);
+    const camera = new THREE.PerspectiveCamera(70, width / height, 0.1, 300);
     cameraRef.current = camera;
     scene.add(camera);
 
@@ -1476,7 +1670,17 @@ export function FirstPersonWorld({
     scene.add(dirLight);
 
     // Create Floor Grid and Landscape representation
-    const floorGeo = new THREE.PlaneGeometry(80, 80, 20, 20);
+    let floorSize = 80;
+    let gridDivisions = 40;
+    if (currentMap === 'lobby' || currentMap === 'neighborhood') {
+      floorSize = 160;
+      gridDivisions = 80;
+    } else if (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3') {
+      floorSize = 180;
+      gridDivisions = 90;
+    }
+
+    const floorGeo = new THREE.PlaneGeometry(floorSize, floorSize, 20, 20);
     floorGeo.rotateX(-Math.PI / 2);
 
     const floorTexture = createProceduralFloorTexture(currentMap);
@@ -1488,17 +1692,30 @@ export function FirstPersonWorld({
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     scene.add(floorMesh);
 
+    // Sky Dome
+    const skyGeo = new THREE.SphereGeometry(175, 32, 15);
+    const skyMat = new THREE.MeshBasicMaterial({
+      map: createProceduralSkyTexture(currentMap),
+      side: THREE.BackSide,
+    });
+    const skyDome = new THREE.Mesh(skyGeo, skyMat);
+    skyDome.scale.set(-1, 1, 1);
+    scene.add(skyDome);
+
     // In Map 3, draw the Extraction Beacon
     let extractionBeaconMesh: THREE.Mesh | null = null;
     let extractionZoneRing: THREE.Mesh | null = null;
     let extractionShieldMesh: THREE.Mesh | null = null;
 
     if (currentMap === 'map3') {
+      const eX = extractionXRef.current;
+      const eZ = extractionZRef.current;
+
       // Beacon pole
       const poleGeo = new THREE.CylinderGeometry(0.2, 0.25, 3.5, 8);
       const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4 });
       extractionBeaconMesh = new THREE.Mesh(poleGeo, poleMat);
-      extractionBeaconMesh.position.set(0, 1.75, -10);
+      extractionBeaconMesh.position.set(eX, 1.75, eZ);
       scene.add(extractionBeaconMesh);
 
       // Glowing light at the top of the beacon
@@ -1510,6 +1727,18 @@ export function FirstPersonWorld({
       topLight.position.y = 1.85;
       extractionBeaconMesh.add(topLight);
 
+      // Giant glowing light beam shooting to the sky
+      const beamGeo = new THREE.CylinderGeometry(0.4, 0.4, 60, 16);
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: extractionActive ? 0x10b981 : 0xef4444,
+        transparent: true,
+        opacity: 0.25,
+        side: THREE.DoubleSide
+      });
+      const skyBeam = new THREE.Mesh(beamGeo, beamMat);
+      skyBeam.position.set(0, 30, 0); // Local to beacon
+      extractionBeaconMesh.add(skyBeam);
+
       // Ring showing extraction bounds
       const zoneGeo = new THREE.RingGeometry(4.9, 5.0, 32);
       zoneGeo.rotateX(-Math.PI / 2);
@@ -1520,7 +1749,7 @@ export function FirstPersonWorld({
         opacity: 0.75
       });
       extractionZoneRing = new THREE.Mesh(zoneGeo, zoneMat);
-      extractionZoneRing.position.set(0, 0.05, -10);
+      extractionZoneRing.position.set(eX, 0.05, eZ);
       scene.add(extractionZoneRing);
 
       // Transparent shield dome when active
@@ -1533,13 +1762,13 @@ export function FirstPersonWorld({
           side: THREE.DoubleSide
         });
         extractionShieldMesh = new THREE.Mesh(shieldGeo, shieldMat);
-        extractionShieldMesh.position.set(0, 0, -10);
+        extractionShieldMesh.position.set(eX, 0, eZ);
         scene.add(extractionShieldMesh);
       }
     }
 
     // Render floor grids details
-    const gridHelper = new THREE.GridHelper(80, 40, 0xdec1ac, 0x3e425e);
+    const gridHelper = new THREE.GridHelper(floorSize, gridDivisions, 0xdec1ac, 0x3e425e);
     gridHelper.position.y = 0.01;
     if (gridHelper.material instanceof THREE.Material) {
       gridHelper.material.transparent = true;
@@ -1619,8 +1848,145 @@ export function FirstPersonWorld({
         // Neighborhood houses
         geo = new THREE.BoxGeometry(4, 3, 4);
         mat = new THREE.MeshStandardMaterial({ color: 0x2a2845, roughness: 0.6 });
-      } else { // portals or doors
-        geo = new THREE.TorusGeometry(1.5, 0.2, 8, 24);
+      } else if (node.type.startsWith('door_')) {
+        const gateGroup = createDetailedGateMesh(node.type);
+        gateGroup.position.set(node.x, 0, node.z);
+        if (node.type === 'door_map1' || node.type === 'door_map2') {
+          gateGroup.rotation.y = Math.atan2(node.x, node.z) + Math.PI;
+        } else if (node.type === 'door_lobby' && (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3')) {
+          gateGroup.rotation.y = Math.PI;
+        }
+        gateGroup.name = node.id;
+        scene.add(gateGroup);
+        activeMeshes.push(gateGroup);
+        return;
+      } else if (node.type === 'stash') {
+        const chestGroup = new THREE.Group();
+        const baseGeo = new THREE.BoxGeometry(1.6, 0.8, 1.0);
+        const baseMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.8, roughness: 0.3 });
+        const base = new THREE.Mesh(baseGeo, baseMat);
+        base.position.y = 0.4;
+        chestGroup.add(base);
+
+        const lidGeo = new THREE.BoxGeometry(1.64, 0.2, 1.04);
+        const lidMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.7, roughness: 0.4 });
+        const lid = new THREE.Mesh(lidGeo, lidMat);
+        lid.position.y = 0.9;
+        chestGroup.add(lid);
+
+        const lockGeo = new THREE.BoxGeometry(0.2, 0.2, 0.1);
+        const lockMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
+        const lock = new THREE.Mesh(lockGeo, lockMat);
+        lock.position.set(0, 0.6, 0.52);
+        chestGroup.add(lock);
+
+        chestGroup.position.set(node.x, 0, node.z);
+        chestGroup.name = node.id;
+        scene.add(chestGroup);
+        activeMeshes.push(chestGroup);
+        return;
+      } else if (node.type === 'forge') {
+        const forgeGroup = new THREE.Group();
+        const bodyGeo = new THREE.BoxGeometry(1.8, 1.5, 1.2);
+        const brickMat = new THREE.MeshStandardMaterial({ color: 0x7f1d1d, roughness: 0.9 });
+        const body = new THREE.Mesh(bodyGeo, brickMat);
+        body.position.y = 0.75;
+        forgeGroup.add(body);
+        
+        const chimGeo = new THREE.CylinderGeometry(0.3, 0.3, 2.0, 8);
+        const chim = new THREE.Mesh(chimGeo, brickMat);
+        chim.position.set(0, 2.0, 0);
+        forgeGroup.add(chim);
+
+        const fireGeo = new THREE.BoxGeometry(1.2, 0.2, 0.8);
+        const fireMat = new THREE.MeshBasicMaterial({ color: 0xff4500 });
+        const fire = new THREE.Mesh(fireGeo, fireMat);
+        fire.position.set(0, 0.9, 0.22);
+        forgeGroup.add(fire);
+
+        forgeGroup.position.set(node.x, 0, node.z);
+        forgeGroup.name = node.id;
+        scene.add(forgeGroup);
+        activeMeshes.push(forgeGroup);
+        return;
+      } else if (node.type === 'weaver') {
+        const loomGroup = new THREE.Group();
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.8 });
+        const p1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.0, 0.15), woodMat);
+        p1.position.set(-0.8, 1.0, -0.4);
+        const p2 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.0, 0.15), woodMat);
+        p2.position.set(0.8, 1.0, -0.4);
+        const p3 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.0, 0.15), woodMat);
+        p3.position.set(-0.8, 1.0, 0.4);
+        const p4 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 2.0, 0.15), woodMat);
+        p4.position.set(0.8, 1.0, 0.4);
+        
+        const cb1 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.15, 0.15), woodMat);
+        cb1.position.set(0, 1.9, 0);
+        const cb2 = new THREE.Mesh(new THREE.BoxGeometry(1.8, 0.15, 0.15), woodMat);
+        cb2.position.set(0, 0.3, 0);
+        
+        const clothMat = new THREE.MeshStandardMaterial({ color: 0x3b82f6, roughness: 0.9 });
+        const clothRoller = new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.3, 1.4, 12), clothMat);
+        clothRoller.rotation.z = Math.PI / 2;
+        clothRoller.position.set(0, 1.1, 0);
+
+        loomGroup.add(p1, p2, p3, p4, cb1, cb2, clothRoller);
+        loomGroup.position.set(node.x, 0, node.z);
+        loomGroup.name = node.id;
+        scene.add(loomGroup);
+        activeMeshes.push(loomGroup);
+        return;
+      } else if (node.type === 'enchanter') {
+        const enchGroup = new THREE.Group();
+        const pedGeo = new THREE.CylinderGeometry(0.8, 1.0, 1.2, 16);
+        const pedMat = new THREE.MeshStandardMaterial({ color: 0x312e81, roughness: 0.7 });
+        const ped = new THREE.Mesh(pedGeo, pedMat);
+        ped.position.y = 0.6;
+        enchGroup.add(ped);
+
+        const crystalGeo = new THREE.OctahedronGeometry(0.35, 0);
+        const crystalMat = new THREE.MeshStandardMaterial({ color: 0xa855f7, emissive: 0x6b21a8, roughness: 0.1, metalness: 0.9 });
+        const floatingCrystal = new THREE.Mesh(crystalGeo, crystalMat);
+        floatingCrystal.position.set(0, 1.8, 0);
+        enchGroup.add(floatingCrystal);
+        
+        enchGroup.userData = { floatingCrystal };
+
+        enchGroup.position.set(node.x, 0, node.z);
+        enchGroup.name = node.id;
+        scene.add(enchGroup);
+        activeMeshes.push(enchGroup);
+        return;
+      } else if (node.type === 'marketplace') {
+        const martGroup = new THREE.Group();
+        const standMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.9 });
+        
+        const table = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.8, 1.0), standMat);
+        table.position.y = 0.4;
+        martGroup.add(table);
+
+        const postMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
+        const postL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.2, 0.1), postMat);
+        postL.position.set(-1.1, 1.1, -0.4);
+        const postR = new THREE.Mesh(new THREE.BoxGeometry(0.1, 2.2, 0.1), postMat);
+        postR.position.set(1.1, 1.1, -0.4);
+        martGroup.add(postL, postR);
+
+        const canopyGeo = new THREE.BoxGeometry(2.6, 0.15, 1.4);
+        const canopyMat = new THREE.MeshStandardMaterial({ color: 0xb91c1c, roughness: 0.8 });
+        const canopy = new THREE.Mesh(canopyGeo, canopyMat);
+        canopy.position.set(0, 2.2, -0.2);
+        canopy.rotation.x = 0.2;
+        martGroup.add(canopy);
+
+        martGroup.position.set(node.x, 0, node.z);
+        martGroup.name = node.id;
+        scene.add(martGroup);
+        activeMeshes.push(martGroup);
+        return;
+      } else { // portals or doors or other interactive entities
+        geo = new THREE.TorusGeometry(1.2, 0.15, 8, 24);
         mat = new THREE.MeshStandardMaterial({ color: 0x6366f1, emissive: 0x312e81 });
       }
 
@@ -1640,6 +2006,97 @@ export function FirstPersonWorld({
         scene.add(roof);
       }
     });
+
+    // Spawn decorative obstacles/scenery based on map type to shape pathways
+    if (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3') {
+      const obstacleCount = currentMap === 'map1' ? 45 : currentMap === 'map2' ? 40 : 35;
+      const avoidanceRadius = 8;
+      
+      for (let i = 0; i < obstacleCount; i++) {
+        let ox = (Math.random() - 0.5) * 160;
+        let oz = (Math.random() - 0.5) * 160;
+
+        const playerDist = Math.sqrt(ox * ox + Math.pow(oz - 75, 2));
+        if (playerDist < 12) continue;
+
+        let tooClose = false;
+        activeNodes.forEach(node => {
+          const nodeDist = Math.sqrt(Math.pow(ox - node.x, 2) + Math.pow(oz - node.z, 2));
+          if (nodeDist < avoidanceRadius) {
+            tooClose = true;
+          }
+        });
+
+        if (currentMap === 'map3') {
+          const beaconDist = Math.sqrt(Math.pow(ox - extractionXRef.current, 2) + Math.pow(oz - extractionZRef.current, 2));
+          if (beaconDist < 10) tooClose = true;
+        }
+
+        if (tooClose) continue;
+
+        if (currentMap === 'map1') {
+          const treeGroup = new THREE.Group();
+          const trunkGeo = new THREE.CylinderGeometry(0.15, 0.2, 1.2, 8);
+          const trunkMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.9 });
+          const trunk = new THREE.Mesh(trunkGeo, trunkMat);
+          trunk.position.y = 0.6;
+          treeGroup.add(trunk);
+
+          const leavesGeo = new THREE.ConeGeometry(0.9, 2.5, 8);
+          const leavesMat = new THREE.MeshStandardMaterial({ color: 0x065f46, roughness: 0.8 });
+          const leaves = new THREE.Mesh(leavesGeo, leavesMat);
+          leaves.position.y = 2.25;
+          treeGroup.add(leaves);
+          
+          treeGroup.position.set(ox, 0, oz);
+          treeGroup.traverse(child => {
+            if (child instanceof THREE.Mesh) {
+              child.castShadow = true;
+              child.receiveShadow = true;
+            }
+          });
+          treeGroup.name = `deco_tree_${i}`;
+          scene.add(treeGroup);
+          activeMeshes.push(treeGroup as any);
+
+        } else if (currentMap === 'map2') {
+          const cryGeo = new THREE.ConeGeometry(0.35, 1.8, 5);
+          const cryMat = new THREE.MeshStandardMaterial({
+            color: 0x0ea5e9,
+            emissive: 0x0369a1,
+            roughness: 0.1,
+            metalness: 0.9
+          });
+          const crystal = new THREE.Mesh(cryGeo, cryMat);
+          crystal.position.set(ox, 0.9, oz);
+          crystal.rotation.x = (Math.random() - 0.5) * 0.3;
+          crystal.rotation.z = (Math.random() - 0.5) * 0.3;
+          crystal.castShadow = true;
+          crystal.receiveShadow = true;
+          crystal.name = `deco_crystal_${i}`;
+          scene.add(crystal);
+          activeMeshes.push(crystal);
+
+        } else if (currentMap === 'map3') {
+          const spikeGeo = new THREE.ConeGeometry(0.5, 2.2, 4);
+          const spikeMat = new THREE.MeshStandardMaterial({
+            color: 0x111827,
+            emissive: 0x991b1b,
+            roughness: 0.4,
+            metalness: 0.7
+          });
+          const spike = new THREE.Mesh(spikeGeo, spikeMat);
+          spike.position.set(ox, 1.1, oz);
+          spike.rotation.x = (Math.random() - 0.5) * 0.25;
+          spike.rotation.z = (Math.random() - 0.5) * 0.25;
+          spike.castShadow = true;
+          spike.receiveShadow = true;
+          spike.name = `deco_spike_${i}`;
+          scene.add(spike);
+          activeMeshes.push(spike);
+        }
+      }
+    }
 
     // Define colors dictionary for emotion mappings
     const colorsDict: Record<EmotionName, number> = {
@@ -1914,6 +2371,12 @@ export function FirstPersonWorld({
         if (m.name === 'companion_nitz') {
           m.position.y = 1.0 + Math.sin(timer * 2.2) * 0.22;
           m.rotation.y += 0.015;
+        } else if (m.userData && m.userData.vortex) {
+          m.userData.vortex.rotation.z += 0.02;
+        } else if (m.userData && m.userData.floatingCrystal) {
+          m.userData.floatingCrystal.position.y = 1.8 + Math.sin(timer * 3.0) * 0.15;
+          m.userData.floatingCrystal.rotation.y += 0.035;
+          m.userData.floatingCrystal.rotation.x += 0.01;
         } else if (m.name === 'road_to_lobby' || m.name.startsWith('gate_') || m.name === 'portal_arena' || m.name === 'map3_exit' || m.name === 'map2_exit' || m.name === 'map1_exit') {
           m.rotation.z += 0.01;
         }
@@ -2673,9 +3136,24 @@ export function FirstPersonWorld({
       // Safe bound clamps
       let limitValue = 38;
       if (currentMap === 'cabin') limitValue = 5;
+      else if (currentMap === 'lobby' || currentMap === 'neighborhood') limitValue = 78;
+      else if (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3') limitValue = 88;
 
       let nextX = Math.max(-limitValue, Math.min(limitValue, curX + dx));
       let nextZ = Math.max(-limitValue, Math.min(limitValue, curZ + dz));
+
+      // Solid collision check for decorative elements and interactables
+      activeMeshes.forEach(mesh => {
+        if (mesh.name && (mesh.name.startsWith('deco_') || mesh.name.startsWith('tr_') || mesh.name.startsWith('or_') || mesh.name.startsWith('workbench_') || mesh.name === 'stash')) {
+          const dist = Math.sqrt(Math.pow(nextX - mesh.position.x, 2) + Math.pow(nextZ - mesh.position.z, 2));
+          const collisionDist = mesh.name.startsWith('deco_') ? 1.0 : 1.5;
+          if (dist < collisionDist) {
+            const angle = Math.atan2(nextZ - mesh.position.z, nextX - mesh.position.x);
+            nextX = mesh.position.x + Math.cos(angle) * collisionDist;
+            nextZ = mesh.position.z + Math.sin(angle) * collisionDist;
+          }
+        }
+      });
 
       // JUMP PHYSICS (Space triggers jump)
       const gravity = -18.0; // gravity acceleration
@@ -2754,6 +3232,8 @@ export function FirstPersonWorld({
 
     let limitValue = 38;
     if (currentMap === 'cabin') limitValue = 5;
+    else if (currentMap === 'lobby' || currentMap === 'neighborhood') limitValue = 78;
+    else if (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3') limitValue = 88;
 
     let nextX = Math.max(-limitValue, Math.min(limitValue, playerX + dx));
     let nextZ = Math.max(-limitValue, Math.min(limitValue, playerZ + dz));
@@ -3331,7 +3811,7 @@ export function FirstPersonWorld({
   const activeShieldSkillName = activeShield?.name.includes('Estelares') ? 'Barrera Rúnica' : 'Guardia Simple';
   const activeArmorSkillName = activeArmor?.name.includes('Escamas') ? 'Escama Sagrada' : 'Refugio Común';
 
-  const distanceToBeacon = currentMap === 'map3' ? Math.sqrt(Math.pow(playerX, 2) + Math.pow(playerZ - (-10), 2)) : 999;
+  const distanceToBeacon = currentMap === 'map3' ? Math.sqrt(Math.pow(playerX - extractionXRef.current, 2) + Math.pow(playerZ - extractionZRef.current, 2)) : 999;
   const isNearBeacon = distanceToBeacon <= 5.0;
 
   return (
