@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Mic, MicOff, Loader2, Volume2, XCircle } from 'lucide-react';
 import { PlayerProgress } from '../types';
-import { GoogleGenAI } from '@google/genai';
 
 interface GeminiLiveChatProps {
   progress: PlayerProgress;
@@ -14,23 +13,23 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
   const [error, setError] = useState<string | null>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   
+  const wsRef = useRef<WebSocket | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
-  const liveSessionRef = useRef<any>(null);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
 
-  const decodeBase64 = (base64: string): Uint8Array => {
+  const decodeBase64 = (base64: string): ArrayBuffer => {
     const binaryString = window.atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
       bytes[i] = binaryString.charCodeAt(i);
     }
-    return bytes;
+    return bytes.buffer;
   };
 
-  const decodeAudioData = async (data: Uint8Array, ctx: AudioContext): Promise<AudioBuffer> => {
-    const dataInt16 = new Int16Array(data.buffer);
+  const decodeAudioData = async (dataBuffer: ArrayBuffer, ctx: AudioContext): Promise<AudioBuffer> => {
+    const dataInt16 = new Int16Array(dataBuffer);
     const frameCount = dataInt16.length;
     const buffer = ctx.createBuffer(1, frameCount, 24000);
     const channelData = buffer.getChannelData(0);
@@ -61,70 +60,103 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
       setIsConnecting(true);
       setError(null);
       const apiKey = import.meta.env.VITE_GEMINI_API_KEY;
-      if (!apiKey) throw new Error("No VITE_GEMINI_API_KEY en tu .env");
+      if (!apiKey) throw new Error("No VITE_GEMINI_API_KEY set in .env");
 
-      // 1. Iniciar Audio Síncrono
       const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate: 16000 });
       await audioCtx.resume();
       audioCtxRef.current = audioCtx;
 
-      // 2. Pedir Micrófono
+      const wsUrl = `wss://generativelanguage.googleapis.com/ws/google.ai.generativelanguage.v1alpha.GenerativeService.BidiGenerateContent?key=${apiKey}`;
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        const nitzName = progress.avatar?.name || 'Nitz';
+        const setupMessage = {
+          setup: {
+            model: "models/gemini-2.0-flash-exp",
+            generationConfig: { responseModalities: ["AUDIO"] },
+            systemInstruction: {
+              parts: [{ text: `Eres ${nitzName}, un compañero IA leal en el mundo de supervivencia llamado Evolutia. El jugador confía en ti. Sus stats: HP ${progress.hp}/${progress.maxHp}, Oro: ${progress.gold}. Tu fase es ${progress.phase}. Háblale en español directamente. IMPORTANTE: Salúdalo efusivamente ahora mismo y dile que lo escuchas fuerte y claro.` }]
+            }
+          }
+        };
+        ws.send(JSON.stringify(setupMessage));
+        
+        setupAudio(ws, audioCtx);
+      };
+
+      ws.onmessage = async (event) => {
+        try {
+          if (typeof event.data === 'string') {
+            const msg = JSON.parse(event.data);
+            if (msg.serverContent && msg.serverContent.modelTurn) {
+              const parts = msg.serverContent.modelTurn.parts;
+              for (const part of parts) {
+                if (part.text) console.log("Nitz dice:", part.text);
+                if (part.inlineData && part.inlineData.data) {
+                  const base64Audio = part.inlineData.data;
+                  const arrayBuffer = decodeBase64(base64Audio);
+                  const audioBuffer = await decodeAudioData(arrayBuffer, audioCtxRef.current!);
+                  
+                  if (currentSourceRef.current) currentSourceRef.current.stop();
+                  
+                  const source = audioCtxRef.current!.createBufferSource();
+                  source.buffer = audioBuffer;
+                  source.connect(audioCtxRef.current!.destination);
+                  
+                  setIsSpeaking(true);
+                  source.onended = () => setIsSpeaking(false);
+                  source.start(0);
+                  currentSourceRef.current = source;
+                }
+              }
+            }
+          }
+        } catch(e) {
+          console.error("Error reproduciendo audio entrante:", e);
+        }
+      };
+
+      ws.onerror = (e) => {
+        console.error("Gemini WebSocket Error:", e);
+        setError("Error de conexión al servidor de Gemini.");
+        setIsConnecting(false);
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        setIsConnecting(false);
+        stopAudio();
+      };
+      
+    } catch (err: any) {
+      console.error(err);
+      setError(err.message || "Error desconocido.");
+      setIsConnecting(false);
+    }
+  };
+
+  const setupAudio = async (ws: WebSocket, audioCtx: AudioContext) => {
+    try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
 
-      // 3. Conectar SDK Oficial
-      const ai = new GoogleGenAI({ apiKey });
-      const session = await ai.models.generateContentLive({
-        model: "gemini-2.0-flash-exp",
-        config: {
-          responseModalities: ["AUDIO"],
-          systemInstruction: {
-            parts: [{
-              text: `Eres ${progress.avatar?.name || 'Nitz'}, un compañero IA leal en el mundo de supervivencia Evolutia. El jugador confía en ti. Sus stats: HP ${progress.hp}/${progress.maxHp}, Oro: ${progress.gold}. Fase ${progress.phase}. Háblale en español directamente. Salúdalo efusivamente ahora mismo para confirmar que me escuchas.`
-            }]
-          }
-        }
-      });
-      
-      liveSessionRef.current = session;
-
-      // 4. Escuchar Respuestas
-      session.on('content', async (content: any) => {
-        const parts = content.modelTurn?.parts || [];
-        for (const part of parts) {
-          if (part.text) console.log("Nitz dice:", part.text);
-          if (part.inlineData && part.inlineData.data) {
-             const bytes = decodeBase64(part.inlineData.data);
-             const audioBuffer = await decodeAudioData(bytes, audioCtx);
-             
-             if (currentSourceRef.current) currentSourceRef.current.stop();
-             
-             const source = audioCtx.createBufferSource();
-             source.buffer = audioBuffer;
-             source.connect(audioCtx.destination);
-             
-             setIsSpeaking(true);
-             source.onended = () => setIsSpeaking(false);
-             source.start(0);
-             currentSourceRef.current = source;
-          }
-        }
-      });
-
-      session.on('close', () => disconnectFromGemini());
-
-      // 5. Iniciar Envío de Audio
       const source = audioCtx.createMediaStreamSource(stream);
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
 
       processor.onaudioprocess = (e) => {
-        if (liveSessionRef.current) {
+        if (ws.readyState === WebSocket.OPEN) {
           const inputData = e.inputBuffer.getChannelData(0);
-          liveSessionRef.current.sendRealtimeInput([{
-             mimeType: "audio/pcm;rate=16000",
-             data: float32ToInt16Base64(inputData)
-          }]);
+          ws.send(JSON.stringify({
+            realtimeInput: {
+              mediaChunks: [{
+                mimeType: "audio/pcm;rate=16000",
+                data: float32ToInt16Base64(inputData)
+              }]
+            }
+          }));
         }
       };
 
@@ -134,23 +166,30 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
       setIsConnected(true);
       setIsConnecting(false);
 
-      // Enviar saludo
-      liveSessionRef.current.sendRealtimeInput([{ text: "¡Hola! He encendido el intercomunicador, háblame por voz." }]);
-
-    } catch (err: any) {
-      console.error(err);
-      setError(err.message || "Error al inicializar.");
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          clientContent: {
+            turns: [{ role: "user", parts: [{ text: "¡Hola! He encendido el intercomunicador, háblame por voz." }] }],
+            turnComplete: true
+          }
+        }));
+      }
+    } catch (e) {
+      console.error("Mic access error:", e);
+      setError("Micrófono denegado.");
       setIsConnecting(false);
     }
   };
 
-  const disconnectFromGemini = () => {
-    if (liveSessionRef.current && typeof liveSessionRef.current.close === 'function') {
-      try { liveSessionRef.current.close(); } catch(e){}
-    }
+  const stopAudio = () => {
     if (processorRef.current && audioCtxRef.current) processorRef.current.disconnect();
     if (mediaStreamRef.current) mediaStreamRef.current.getTracks().forEach(t => t.stop());
     if (audioCtxRef.current && audioCtxRef.current.state !== 'closed') audioCtxRef.current.close().catch(()=>{});
+  };
+
+  const disconnectFromGemini = () => {
+    if (wsRef.current) wsRef.current.close();
+    stopAudio();
     setIsConnected(false);
   };
 
@@ -159,8 +198,7 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
   }, []);
 
   return (
-    <div className="w-full max-w-lg mx-auto bg-[#0a0a0e] border border-cyan-500/20 rounded-2xl shadow-2xl p-6 relative overflow-hidden flex flex-col items-center">
-      <div className="absolute inset-0 bg-gradient-to-t from-cyan-900/10 to-transparent pointer-events-none" />
+    <div className="w-full max-w-lg mx-auto bg-[#0a0a0e] border border-cyan-500/20 rounded-2xl shadow-2xl p-6 relative flex flex-col items-center">
       <button onClick={onClose} className="absolute top-4 right-4 text-gray-500 hover:text-white z-10"><XCircle className="w-6 h-6" /></button>
 
       <div className="relative mb-8 mt-4">
@@ -172,19 +210,13 @@ export function GeminiLiveChat({ progress, onClose }: GeminiLiveChatProps) {
 
       <div className="z-10 w-full">
         {!isConnected ? (
-          <button 
-            onClick={connectToGemini} disabled={isConnecting}
-            className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-3"
-          >
+          <button onClick={connectToGemini} disabled={isConnecting} className="w-full py-4 bg-cyan-600 hover:bg-cyan-500 text-white font-bold uppercase rounded-xl flex justify-center gap-3">
             {isConnecting ? <Loader2 className="w-5 h-5 animate-spin" /> : <Mic className="w-5 h-5" />}
             {isConnecting ? 'Sincronizando...' : 'Conectar Nitz'}
           </button>
         ) : (
-          <button 
-            onClick={disconnectFromGemini}
-            className="w-full py-4 bg-red-600/20 text-red-400 border border-red-500/30 font-bold uppercase rounded-xl transition-all flex items-center justify-center gap-3"
-          >
-            <MicOff className="w-5 h-5" /> Terminar
+          <button onClick={disconnectFromGemini} className="w-full py-4 bg-red-600/20 text-red-400 border border-red-500/30 font-bold uppercase rounded-xl flex justify-center gap-3">
+            <MicOff className="w-5 h-5" /> Terminar Enlace
           </button>
         )}
       </div>

@@ -239,6 +239,305 @@ function createDetailedNitzMesh(
 
   return group;
 }
+
+// Interface for local NPC enemies
+interface LocalEnemy {
+  id: string;
+  name: string;
+  type: 'green_slime' | 'rock_golem' | 'abyss_demon';
+  mesh: THREE.Group;
+  spawnX: number;
+  spawnZ: number;
+  x: number;
+  z: number;
+  hp: number;
+  maxHp: number;
+  damage: number;
+  speed: number;
+  isDead: boolean;
+  respawnTimer: number;
+  lastAttackTime: number;
+  wanderAngle: number;
+  wanderTimer: number;
+  flashTimer: number;
+}
+
+// Procedural ground canvas texture builder
+function createProceduralFloorTexture(mapType: FPMapType): THREE.Texture {
+  const canvas = document.createElement('canvas');
+  canvas.width = 512;
+  canvas.height = 512;
+  const ctx = canvas.getContext('2d')!;
+
+  if (mapType === 'cabin') {
+    // Wood floor planks
+    ctx.fillStyle = '#1e1610';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = '#0d0a08';
+    ctx.lineWidth = 4;
+    for (let y = 0; y < 512; y += 64) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(512, y);
+      ctx.stroke();
+    }
+    ctx.lineWidth = 2;
+    for (let y = 0; y < 512; y += 64) {
+      const offset = (y / 64) % 2 === 0 ? 0 : 128;
+      for (let x = offset; x < 512; x += 256) {
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + 64);
+        ctx.stroke();
+      }
+    }
+  } else if (mapType === 'neighborhood') {
+    // Stylized grass moss
+    ctx.fillStyle = '#14301d';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 200; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#1b4028' : '#0d2214';
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const r = 10 + Math.random() * 20;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.strokeStyle = '#225534';
+    ctx.lineWidth = 2;
+    for (let i = 0; i < 50; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.lineTo(x - 5, y - 15);
+      ctx.lineTo(x + 5, y - 15);
+      ctx.stroke();
+    }
+  } else if (mapType === 'lobby') {
+    // Stone tiles with glowing grid lines
+    ctx.fillStyle = '#12131a';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = '#2c2e3d';
+    ctx.lineWidth = 6;
+    for (let i = 0; i <= 512; i += 64) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, i);
+      ctx.lineTo(512, i);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#6366f1';
+    for (let i = 0; i <= 512; i += 128) {
+      for (let j = 0; j <= 512; j += 128) {
+        ctx.beginPath();
+        ctx.arc(i, j, 4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  } else if (mapType === 'map1') {
+    // Mystical leafy green forest
+    ctx.fillStyle = '#0a1d12';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 150; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#112c1b' : '#06140c';
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const r = 15 + Math.random() * 30;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.fillStyle = '#4ade80';
+    for (let i = 0; i < 40; i++) {
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      ctx.beginPath();
+      ctx.arc(x, y, 2 + Math.random() * 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (mapType === 'map2') {
+    // Celestial stone quarries with mineral veins
+    ctx.fillStyle = '#1e1c22';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = '#2d2833';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 10; i++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * 512, 0);
+      ctx.lineTo(Math.random() * 512, 512);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = '#60a5fa';
+    ctx.lineWidth = 3;
+    for (let i = 0; i < 5; i++) {
+      ctx.beginPath();
+      ctx.moveTo(0, Math.random() * 512);
+      ctx.lineTo(128 + Math.random() * 256, Math.random() * 512);
+      ctx.lineTo(512, Math.random() * 512);
+      ctx.stroke();
+    }
+  } else if (mapType === 'map3') {
+    // Volcanic lava cracks
+    ctx.fillStyle = '#1c080e';
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = '#f43f5e';
+    ctx.lineWidth = 4;
+    for (let i = 0; i < 12; i++) {
+      ctx.beginPath();
+      ctx.moveTo(Math.random() * 512, 0);
+      ctx.bezierCurveTo(Math.random() * 512, 128, Math.random() * 512, 384, Math.random() * 512, 512);
+      ctx.stroke();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(10, 10);
+  return texture;
+}
+
+// Procedural detailed enemy meshes
+function createDetailedEnemyMesh(type: string): THREE.Group {
+  const group = new THREE.Group();
+
+  if (type === 'green_slime') {
+    const bodyGeo = new THREE.SphereGeometry(1.0, 16, 16);
+    bodyGeo.scale(1.2, 0.8, 1.2);
+    const bodyMat = new THREE.MeshPhongMaterial({
+      color: 0x10b981,
+      emissive: 0x064e3b,
+      shininess: 80,
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.8;
+    group.add(body);
+
+    const eyeGeo = new THREE.SphereGeometry(0.15, 8, 8);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 });
+    
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.35, 0.9, 0.8);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.35, 0.9, 0.8);
+    group.add(leftEye, rightEye);
+
+    const leafGeo = new THREE.ConeGeometry(0.2, 0.6, 8);
+    const leafMat = new THREE.MeshPhongMaterial({ color: 0x047857 });
+    
+    const leftLeaf = new THREE.Mesh(leafGeo, leafMat);
+    leftLeaf.position.set(-0.4, 1.4, 0);
+    leftLeaf.rotation.z = 0.4;
+    
+    const rightLeaf = new THREE.Mesh(leafGeo, leafMat);
+    rightLeaf.position.set(0.4, 1.4, 0);
+    rightLeaf.rotation.z = -0.4;
+    group.add(leftLeaf, rightLeaf);
+
+    group.scale.set(0.7, 0.7, 0.7);
+
+  } else if (type === 'rock_golem') {
+    const bodyGeo = new THREE.DodecahedronGeometry(1.1, 0);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x475569,
+      roughness: 0.9,
+      metalness: 0.1,
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 1.2;
+    group.add(body);
+
+    const headGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+    const headMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.8 });
+    const head = new THREE.Mesh(headGeo, headMat);
+    head.position.set(0, 2.1, 0.1);
+    group.add(head);
+
+    const eyeGeo = new THREE.BoxGeometry(0.12, 0.08, 0.2);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8 });
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.25, 2.15, 0.48);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.25, 2.15, 0.48);
+    group.add(leftEye, rightEye);
+
+    const armGeo = new THREE.IcosahedronGeometry(0.5, 0);
+    const crystalMat = new THREE.MeshStandardMaterial({
+      color: 0x0ea5e9,
+      emissive: 0x0369a1,
+      roughness: 0.1,
+      metalness: 0.9
+    });
+    
+    const leftArm = new THREE.Mesh(armGeo, crystalMat);
+    leftArm.position.set(-1.4, 1.3, 0);
+    
+    const rightArm = new THREE.Mesh(armGeo, crystalMat);
+    rightArm.position.set(1.4, 1.3, 0);
+    group.add(leftArm, rightArm);
+
+    group.userData = { leftArm, rightArm };
+    group.scale.set(0.8, 0.8, 0.8);
+
+  } else if (type === 'abyss_demon') {
+    const bodyGeo = new THREE.IcosahedronGeometry(1.3, 1);
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: 0x111827,
+      roughness: 0.4,
+      metalness: 0.7,
+    });
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 1.3;
+    group.add(body);
+
+    const hornGeo = new THREE.ConeGeometry(0.25, 1.2, 8);
+    const hornMat = new THREE.MeshPhongMaterial({ color: 0xd97706, shininess: 120 });
+    
+    const leftHorn = new THREE.Mesh(hornGeo, hornMat);
+    leftHorn.position.set(-0.6, 2.2, 0);
+    leftHorn.rotation.z = 0.5;
+    leftHorn.rotation.x = -0.2;
+
+    const rightHorn = new THREE.Mesh(hornGeo, hornMat);
+    rightHorn.position.set(0.6, 2.2, 0);
+    rightHorn.rotation.z = -0.5;
+    rightHorn.rotation.x = -0.2;
+    group.add(leftHorn, rightHorn);
+
+    const eyeGeo = new THREE.SphereGeometry(0.2, 8, 8);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0xef4444 });
+    const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+    leftEye.position.set(-0.4, 1.5, 1.0);
+    const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+    rightEye.position.set(0.4, 1.5, 1.0);
+    group.add(leftEye, rightEye);
+
+    const ringGeo = new THREE.TorusGeometry(1.6, 0.08, 8, 24);
+    const ringMat = new THREE.MeshBasicMaterial({ color: 0xf43f5e, transparent: true, opacity: 0.6 });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.y = 1.3;
+    group.add(ring);
+
+    group.userData = { ring };
+    group.scale.set(1.0, 1.0, 1.0);
+  }
+
+  group.traverse(child => {
+    if (child instanceof THREE.Mesh) {
+      child.castShadow = true;
+      child.receiveShadow = true;
+    }
+  });
+
+  return group;
+}
+
 import { collection, doc, query, onSnapshot, updateDoc, increment, getDoc, arrayUnion, addDoc } from 'firebase/firestore';
 
 // Subcomponents to render as immersive overlays
@@ -304,6 +603,18 @@ export function FirstPersonWorld({
   const [currentMap, setCurrentMap] = useState<FPMapType>('cabin');
   const [playerX, setPlayerX] = useState<number>(0);
   const [playerZ, setPlayerZ] = useState<number>(5);
+  const [mapTransitioning, setMapTransitioning] = useState<boolean>(false);
+  const prevMapRef = useRef<FPMapType>('cabin');
+
+  const changeMap = (nextMap: FPMapType) => {
+    setMapTransitioning(true);
+    setTimeout(() => {
+      setCurrentMap(nextMap);
+      setTimeout(() => {
+        setMapTransitioning(false);
+      }, 300);
+    }, 300);
+  };
   const [cameraAngle, setCameraAngle] = useState<number>(0); // in radians
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
@@ -703,6 +1014,9 @@ export function FirstPersonWorld({
   // Load interactive nodes based on map selected
   useEffect(() => {
     let newNodes: InteractiveNode3D[] = [];
+    const prevMap = prevMapRef.current;
+    prevMapRef.current = currentMap;
+
     if (currentMap === 'cabin') {
       newNodes = [
         { id: 'stash', name: 'Almacén Táctico (Stash)', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro' },
@@ -726,7 +1040,11 @@ export function FirstPersonWorld({
         { id: 'plot_stellaria', name: 'Cabaña de Stellaria', x: -10, z: -18, type: 'house_plot', plotOwnerId: 'plot_stellaria', label: '🌌 Visitar / Alabar Nitz de Stellaria' }
       ];
       setPlayerX(0);
-      setPlayerZ(7);
+      if (prevMap === 'lobby') {
+        setPlayerZ(-22); // Spawn near road_to_lobby (which is at z: -25)
+      } else {
+        setPlayerZ(7); // Spawn near door_back_cabin (which is at z: 9)
+      }
     } else if (currentMap === 'lobby') {
       newNodes = [
         { id: 'marketplace', name: 'Gran Mercado Global', x: 8, z: 0, type: 'marketplace', label: '⚖️ Acceder al Mercado Vivo (Comprar/Vender)' },
@@ -736,8 +1054,22 @@ export function FirstPersonWorld({
         { id: 'gate_world3', name: 'Portal Celestial al Mapa 3: Zona de Bruma de Sangre', x: 0, z: -18, type: 'door_map3', label: '💀 Viajar a la Zona Roja (Elite/PvP / Full Loot!)' },
         { id: 'portal_arena', name: 'Portal de Duelos de Arena vs Rogue Nitz', x: 0, z: -2, type: 'door_arena', label: '⚔️ Iniciar Arena de Combates vs Rogue Nitz' }
       ];
-      setPlayerX(0);
-      setPlayerZ(10);
+      if (prevMap === 'neighborhood') {
+        setPlayerX(0);
+        setPlayerZ(9.5); // near gate_vecindario (z: 12)
+      } else if (prevMap === 'map1') {
+        setPlayerX(-10); // near gate_world1 (x: -12, z: -8)
+        setPlayerZ(-8);
+      } else if (prevMap === 'map2') {
+        setPlayerX(10); // near gate_world2 (x: 12, z: -8)
+        setPlayerZ(-8);
+      } else if (prevMap === 'map3') {
+        setPlayerX(0); // near gate_world3 (x: 0, z: -18)
+        setPlayerZ(-15);
+      } else {
+        setPlayerX(0);
+        setPlayerZ(10);
+      }
     } else if (currentMap === 'map1') {
       // Safe gathering field
       newNodes = [
@@ -927,7 +1259,7 @@ export function FirstPersonWorld({
             metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
             essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
           });
-          setCurrentMap('cabin');
+          changeMap('cabin');
           triggerNotification("💀 Duelo empatado. Ambos han colapsado y perdido sus recursos en la bruma.");
         } else {
           setTempBag({
@@ -936,7 +1268,7 @@ export function FirstPersonWorld({
             metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
             essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
           });
-          setCurrentMap('cabin');
+          changeMap('cabin');
           triggerNotification(`💀 Has sido derrotado por ${isChallenger ? data.defenderName : data.challengerName}. Perdiste todos tus recursos temporales.`);
         }
 
@@ -966,20 +1298,20 @@ export function FirstPersonWorld({
 
   // Player Death Listener
   useEffect(() => {
-    if (progress.hp !== undefined && progress.hp <= 0 && currentMap === 'map3') {
-      // 1. Drop TempBag
-      // For this prototype, we'll just log it. A true robust MMO would spawn a Firestore node here.
-      console.log("Died in Map 3. Dropping tempBag:", tempBag);
+    if (progress.hp !== undefined && progress.hp <= 0) {
+      const isRedZone = currentMap === 'map3';
+      const isAdventure = currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3';
       
-      // 2. Clear TempBag locally
-      setTempBag({
-        wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
-        stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
-        metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
-        essence: { common: 0, rare: 0, epic: 0, legendary: 0 },
-      });
+      if (isAdventure) {
+        setTempBag({
+          wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
+          stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
+          metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
+          essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
+        });
+      }
 
-      // 3. Reset HP and send back to cabin
+      // Reset HP and send back to cabin
       onSaveProgress({
         ...progress,
         hp: progress.maxHp || 100
@@ -988,8 +1320,14 @@ export function FirstPersonWorld({
         updateDoc(doc(db, 'users', auth.currentUser.uid), { hp: progress.maxHp || 100 });
       }
 
-      setCurrentMap('cabin');
-      triggerNotification("💀 HAS MUERTO. Fuiste purgado de la Zona Roja y perdiste todo tu botín temporal.");
+      changeMap('cabin');
+      if (isRedZone) {
+        triggerNotification("💀 HAS MUERTO. Fuiste derrotado en la Zona Roja y perdiste todo tu botín temporal.");
+      } else if (isAdventure) {
+        triggerNotification("💀 HAS MUERTO. Fuiste derrotado por criaturas hostiles y perdiste tu botín temporal.");
+      } else {
+        triggerNotification("💀 HAS MUERTO. Despertaste en tu cabaña.");
+      }
     }
   }, [progress.hp, currentMap]);
 
@@ -1022,14 +1360,14 @@ export function FirstPersonWorld({
   };
 
   const handleDefeatInArena = () => {
-    if (currentMap === 'map3') {
+    if (currentMap === 'map3' || currentMap === 'map1' || currentMap === 'map2') {
       setTempBag({
         wood: { common: 0, rare: 0, epic: 0, legendary: 0 },
         stone: { common: 0, rare: 0, epic: 0, legendary: 0 },
         metal: { common: 0, rare: 0, epic: 0, legendary: 0 },
         essence: { common: 0, rare: 0, epic: 0, legendary: 0 }
       });
-      setCurrentMap('cabin');
+      changeMap('cabin');
       triggerNotification("💀 Has sido derrotado en combate en la Zona Roja. Perdiste toda tu mochila temporal y fuiste teletransportado a la cabaña.");
     }
     setActiveOverlay('none');
@@ -1043,7 +1381,7 @@ export function FirstPersonWorld({
       // SUCCESSFUL EXTRACTION!
       setExtractionActive(false);
       handleBankResourcesDirectly(); // secure resources to inventory!
-      setCurrentMap('lobby'); // return player safely to Lobby
+      changeMap('lobby'); // return player safely to Lobby
       triggerNotification("🏆 ¡Extracción exitosa! Tus recursos han sido almacenados de forma segura en el almacén.");
       
       // Play chiptune win sound
@@ -1141,19 +1479,11 @@ export function FirstPersonWorld({
     const floorGeo = new THREE.PlaneGeometry(80, 80, 20, 20);
     floorGeo.rotateX(-Math.PI / 2);
 
-    let floorColor = 0x242b40;
-    if (currentMap === 'cabin') floorColor = 0x0a0c10; // Dark industrial metal floor
-    else if (currentMap === 'neighborhood') floorColor = 0x1a2e26; // Grassy green
-    else if (currentMap === 'lobby') floorColor = 0x222638; // Stone pavement
-    else if (currentMap === 'map1') floorColor = 0x132a1e; // Mystic velvet forest
-    else if (currentMap === 'map2') floorColor = 0x201c24; // Rocky quarry
-    else if (currentMap === 'map3') floorColor = 0x3d0b13; // Volcanic crimson ground
-
+    const floorTexture = createProceduralFloorTexture(currentMap);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: floorColor,
-      roughness: 0.8,
-      metalness: 0.2,
-      wireframe: false
+      map: floorTexture,
+      roughness: currentMap === 'cabin' ? 0.4 : 0.8,
+      metalness: currentMap === 'cabin' ? 0.3 : 0.1,
     });
     const floorMesh = new THREE.Mesh(floorGeo, floorMat);
     scene.add(floorMesh);
@@ -1211,6 +1541,10 @@ export function FirstPersonWorld({
     // Render floor grids details
     const gridHelper = new THREE.GridHelper(80, 40, 0xdec1ac, 0x3e425e);
     gridHelper.position.y = 0.01;
+    if (gridHelper.material instanceof THREE.Material) {
+      gridHelper.material.transparent = true;
+      gridHelper.material.opacity = 0.15;
+    }
     scene.add(gridHelper);
 
     // Render Walls if inside Cabin
@@ -1239,7 +1573,7 @@ export function FirstPersonWorld({
     }
 
     // Geometries repository for interactive nodes
-    const activeMeshes: THREE.Mesh[] = [];
+    const activeMeshes: THREE.Object3D[] = [];
 
     activeNodes.forEach(node => {
       let geo: THREE.BufferGeometry;
@@ -1270,9 +1604,17 @@ export function FirstPersonWorld({
         geo = new THREE.BoxGeometry(1.5, 2.5, 0.6);
         mat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
       } else if (node.type === 'nitz_npc') {
-        geo = new THREE.SphereGeometry(0.9, 8, 8);
-        // Custom companion aura paint
-        mat = new THREE.MeshStandardMaterial({ color: currentDominant.colorHex, roughness: 0.1, emissive: currentDominant.colorHex, emissiveIntensity: 0.5 });
+        const nitzGroup = createDetailedNitzMesh(
+          progress.avatar,
+          currentDominant.name as EmotionName,
+          progress.phase,
+          0.45
+        );
+        nitzGroup.position.set(node.x, 0.45, node.z);
+        nitzGroup.name = node.id;
+        scene.add(nitzGroup);
+        activeMeshes.push(nitzGroup);
+        return; // Skip normal mesh instantiation below
       } else if (node.type === 'house_plot') {
         // Neighborhood houses
         geo = new THREE.BoxGeometry(4, 3, 4);
@@ -1335,6 +1677,47 @@ export function FirstPersonWorld({
 
     const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean }[] = [];
     let lastNitzAttack = 0;
+
+    const activeEnemies: LocalEnemy[] = [];
+
+    // Spawn local NPC enemies depending on map
+    let enemyConfigs: { id: string; name: string; x: number; z: number; hp: number; maxHp: number; damage: number; speed: number; type: 'green_slime' | 'rock_golem' | 'abyss_demon' }[] = [];
+    
+    if (currentMap === 'map1') {
+      enemyConfigs = [
+        { id: 'enemy_map1_1', name: 'Rogue Nitz Silvestre', x: -6, z: -2, hp: 50, maxHp: 50, damage: 6, speed: 2.2, type: 'green_slime' },
+        { id: 'enemy_map1_2', name: 'Rogue Nitz Silvestre', x: 6, z: -5, hp: 50, maxHp: 50, damage: 6, speed: 2.2, type: 'green_slime' },
+      ];
+    } else if (currentMap === 'map2') {
+      enemyConfigs = [
+        { id: 'enemy_map2_1', name: 'Golem de Cristal Cantera', x: -7, z: 2, hp: 120, maxHp: 120, damage: 15, speed: 1.6, type: 'rock_golem' },
+        { id: 'enemy_map2_2', name: 'Golem de Cristal Cantera', x: 7, z: -5, hp: 120, maxHp: 120, damage: 15, speed: 1.6, type: 'rock_golem' },
+      ];
+    } else if (currentMap === 'map3') {
+      enemyConfigs = [
+        { id: 'enemy_map3_1', name: 'Devorador Abisal de Sangre', x: -8, z: -8, hp: 220, maxHp: 220, damage: 28, speed: 2.5, type: 'abyss_demon' },
+        { id: 'enemy_map3_2', name: 'Devorador Abisal de Sangre', x: 8, z: -5, hp: 220, maxHp: 220, damage: 28, speed: 2.5, type: 'abyss_demon' },
+      ];
+    }
+
+    enemyConfigs.forEach(conf => {
+      const mesh = createDetailedEnemyMesh(conf.type);
+      mesh.position.set(conf.x, 0.4, conf.z);
+      scene.add(mesh);
+
+      activeEnemies.push({
+        ...conf,
+        mesh,
+        spawnX: conf.x,
+        spawnZ: conf.z,
+        isDead: false,
+        respawnTimer: 0,
+        lastAttackTime: 0,
+        wanderAngle: Math.random() * Math.PI * 2,
+        wanderTimer: Math.random() * 2.0,
+        flashTimer: 0
+      });
+    });
 
     let isDragging = false;
     let prevMouseX = 0;
@@ -1569,6 +1952,115 @@ export function FirstPersonWorld({
           }
         });
 
+        // Hitbox vs local active NPC enemies
+        if (!hit) {
+          for (let j = 0; j < activeEnemies.length; j++) {
+            const enemy = activeEnemies[j];
+            if (enemy.isDead) continue;
+            
+            const dist = p.mesh.position.distanceTo(enemy.mesh.position);
+            if (dist < 1.6) {
+              hit = true;
+              
+              // Visual impact scale
+              enemy.mesh.scale.multiplyScalar(1.25);
+              setTimeout(() => {
+                if (enemy.mesh) {
+                  const baseScale = enemy.type === 'rock_golem' ? 0.8 : enemy.type === 'green_slime' ? 0.7 : 1.0;
+                  enemy.mesh.scale.setScalar(baseScale);
+                }
+              }, 100);
+
+              // Deal damage
+              const isPlayerProjectile = !p.isNitz;
+              const damageDealt = isPlayerProjectile ? 35 : (15 + progressRef.current.phase * 4);
+              enemy.hp -= damageDealt;
+              
+              // Flash enemy red
+              enemy.flashTimer = 0.3;
+              enemy.mesh.traverse(child => {
+                if (child instanceof THREE.Mesh && child.material) {
+                  if (Array.isArray(child.material)) {
+                    child.material.forEach(m => {
+                      if ((m as any).emissive) (m as any).emissive.setHex(0xff0000);
+                    });
+                  } else {
+                    if ((child.material as any).emissive) {
+                      (child.material as any).emissive.setHex(0xff0000);
+                    }
+                  }
+                }
+              });
+              
+              // Hit sound
+              try {
+                const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const gain = audioCtx.createGain();
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+                osc.frequency.exponentialRampToValueAtTime(120, audioCtx.currentTime + 0.1);
+                gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+                gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+                osc.connect(gain);
+                gain.connect(audioCtx.destination);
+                osc.start();
+                osc.stop(audioCtx.currentTime + 0.12);
+              } catch (_) {}
+              
+              // Defeated check
+              if (enemy.hp <= 0) {
+                enemy.isDead = true;
+                enemy.respawnTimer = 0;
+                enemy.mesh.visible = false;
+                
+                let expGained = 15;
+                let goldGained = 8;
+                let resourceType: 'wood' | 'stone' | 'metal' | 'essence' = 'wood';
+                let resourceRarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common';
+                let resourceCount = 1;
+
+                if (enemy.type === 'green_slime') {
+                  expGained = 18;
+                  goldGained = 10;
+                  resourceType = Math.random() > 0.5 ? 'wood' : 'essence';
+                  resourceRarity = Math.random() > 0.8 ? 'rare' : 'common';
+                  resourceCount = Math.floor(Math.random() * 2) + 1;
+                } else if (enemy.type === 'rock_golem') {
+                  expGained = 35;
+                  goldGained = 25;
+                  resourceType = 'stone';
+                  resourceRarity = Math.random() > 0.7 ? 'epic' : 'rare';
+                  resourceCount = Math.floor(Math.random() * 2) + 1;
+                } else if (enemy.type === 'abyss_demon') {
+                  expGained = 75;
+                  goldGained = 60;
+                  resourceType = 'metal';
+                  resourceRarity = Math.random() > 0.6 ? 'epic' : 'legendary';
+                  resourceCount = Math.floor(Math.random() * 2) + 1;
+                }
+
+                // Add to temporary bag
+                setTempBag(tb => {
+                  const b = { ...tb };
+                  b[resourceType][resourceRarity] += resourceCount;
+                  return b;
+                });
+
+                // Update EXP and Gold
+                onSaveProgressRef.current({
+                  ...progressRef.current,
+                  exp: progressRef.current.exp + expGained,
+                  gold: progressRef.current.gold + goldGained
+                });
+
+                triggerNotification(`⭐ ¡Derrotaste a ${enemy.name}! +${expGained} EXP, +${goldGained} Oro y recolectas ${resourceRarity} ${resourceType}.`);
+              }
+              break;
+            }
+          }
+        }
+
         // PvP Hitbox vs online peers (Only in Red Zone Map 3 and if pvpEnabled)
         if (!hit && currentMap === 'map3' && progressRef.current.pvpEnabled) {
           peerMeshes.forEach(pm => {
@@ -1594,8 +2086,6 @@ export function FirstPersonWorld({
                 updateDoc(enemyRef, {
                   hp: increment(-dmg)
                 }).catch(err => console.error("Error applying PvP damage:", err));
-                
-                // Visual local feedback (optional floating text could go here)
               }
             }
           });
@@ -1608,6 +2098,119 @@ export function FirstPersonWorld({
           activeProjectiles.splice(i, 1);
         }
       }
+
+      // Update local active enemies (AI tick)
+      activeEnemies.forEach(enemy => {
+        if (enemy.isDead) {
+          enemy.respawnTimer += 0.016;
+          if (enemy.respawnTimer > 8.0) {
+            enemy.isDead = false;
+            enemy.hp = enemy.maxHp;
+            enemy.mesh.position.set(enemy.spawnX, 0.4, enemy.spawnZ);
+            enemy.mesh.visible = true;
+            
+            // Recover scale
+            const baseScale = enemy.type === 'rock_golem' ? 0.8 : enemy.type === 'green_slime' ? 0.7 : 1.0;
+            enemy.mesh.scale.setScalar(baseScale);
+          }
+          return;
+        }
+
+        // Flash timer tick
+        if (enemy.flashTimer > 0) {
+          enemy.flashTimer -= 0.016;
+          if (enemy.flashTimer <= 0) {
+            enemy.mesh.traverse(child => {
+              if (child instanceof THREE.Mesh && child.material) {
+                let defaultEmissive = 0x000000;
+                if (enemy.type === 'green_slime') defaultEmissive = 0x064e3b;
+                if (Array.isArray(child.material)) {
+                  child.material.forEach(m => {
+                    if ((m as any).emissive) (m as any).emissive.setHex(defaultEmissive);
+                  });
+                } else {
+                  if ((child.material as any).emissive) {
+                    (child.material as any).emissive.setHex(defaultEmissive);
+                  }
+                }
+              }
+            });
+          }
+        }
+
+        // Distance from enemy to player
+        const dx = playerXRef.current - enemy.mesh.position.x;
+        const dz = playerZRef.current - enemy.mesh.position.z;
+        const distToPlayer = Math.sqrt(dx * dx + dz * dz);
+
+        if (distToPlayer < 9.0) {
+          // Chase player
+          const angle = Math.atan2(dx, dz);
+          enemy.mesh.position.x += Math.sin(angle) * enemy.speed * 0.016;
+          enemy.mesh.position.z += Math.cos(angle) * enemy.speed * 0.016;
+          enemy.mesh.rotation.y = angle;
+
+          // Attack player
+          if (distToPlayer < 1.7 && timer - enemy.lastAttackTime > 2.0) {
+            enemy.lastAttackTime = timer;
+            
+            const nextHp = Math.max(0, progressRef.current.hp - enemy.damage);
+            onSaveProgressRef.current({
+              ...progressRef.current,
+              hp: nextHp
+            });
+            if (auth.currentUser) {
+              updateDoc(doc(db, 'users', auth.currentUser.uid), { hp: nextHp }).catch(err => console.error("Error applying NPC damage:", err));
+            }
+            triggerNotification(`💥 ¡El ${enemy.name} te ha atacado! Recibiste ${enemy.damage} de daño.`);
+
+            try {
+              const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.2);
+              gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.25);
+            } catch (_) {}
+          }
+        } else {
+          // Wander around spawn point
+          enemy.wanderTimer -= 0.016;
+          if (enemy.wanderTimer <= 0) {
+            enemy.wanderTimer = 1.5 + Math.random() * 2.0;
+            const distFromSpawnX = enemy.mesh.position.x - enemy.spawnX;
+            const distFromSpawnZ = enemy.mesh.position.z - enemy.spawnZ;
+            const distFromSpawn = Math.sqrt(distFromSpawnX * distFromSpawnX + distFromSpawnZ * distFromSpawnZ);
+            
+            if (distFromSpawn > 5.0) {
+              enemy.wanderAngle = Math.atan2(-distFromSpawnX, -distFromSpawnZ);
+            } else {
+              enemy.wanderAngle = Math.random() * Math.PI * 2;
+            }
+          }
+
+          enemy.mesh.position.x += Math.sin(enemy.wanderAngle) * enemy.speed * 0.4 * 0.016;
+          enemy.mesh.position.z += Math.cos(enemy.wanderAngle) * enemy.speed * 0.4 * 0.016;
+          enemy.mesh.rotation.y = enemy.wanderAngle;
+        }
+
+        // Bobbing animation
+        enemy.mesh.position.y = 0.4 + Math.sin(timer * 3) * 0.12;
+
+        // Custom model animations
+        if (enemy.type === 'rock_golem' && enemy.mesh.userData.leftArm && enemy.mesh.userData.rightArm) {
+          enemy.mesh.userData.leftArm.rotation.z = Math.sin(timer * 2.5) * 0.3;
+          enemy.mesh.userData.rightArm.rotation.z = -Math.sin(timer * 2.5) * 0.3;
+        } else if (enemy.type === 'abyss_demon' && enemy.mesh.userData.ring) {
+          enemy.mesh.userData.ring.rotation.z = timer * 1.5;
+        }
+      });
 
       // Nitz Auto-cast Logic
       if (companionMeshRef.current && (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3')) {
@@ -1627,23 +2230,33 @@ export function FirstPersonWorld({
           camera.getWorldDirection(dir);
           const speed = 12.0;
 
-          // If in Map 3, find nearest enemy
-          if (currentMap === 'map3' && peerMeshes.length > 0) {
-            let nearestDist = Infinity;
-            let nearestPeer: THREE.Mesh | null = null;
-            
+          // Target search logic (online players or local enemies)
+          let nearestDist = Infinity;
+          let targetPosition: THREE.Vector3 | null = null;
+
+          if (currentMap === 'map3' && progressRef.current.pvpEnabled && peerMeshes.length > 0) {
             peerMeshes.forEach(pm => {
               const d = pMesh.position.distanceTo(pm.mesh.position);
               if (d < 15.0 && d < nearestDist) {
                 nearestDist = d;
-                nearestPeer = pm.mesh;
+                targetPosition = pm.mesh.position;
               }
             });
+          }
 
-            if (nearestPeer) {
-              // Calculate direction vector to nearest peer
-              dir.subVectors((nearestPeer as THREE.Mesh).position, pMesh.position).normalize();
-            }
+          if (!targetPosition && activeEnemies.length > 0) {
+            activeEnemies.forEach(enemy => {
+              if (enemy.isDead) return;
+              const d = pMesh.position.distanceTo(enemy.mesh.position);
+              if (d < 15.0 && d < nearestDist) {
+                nearestDist = d;
+                targetPosition = enemy.mesh.position;
+              }
+            });
+          }
+
+          if (targetPosition) {
+            dir.subVectors(targetPosition, pMesh.position).normalize();
           }
 
           activeProjectiles.push({
@@ -1657,11 +2270,43 @@ export function FirstPersonWorld({
         }
       }
 
+      // Animate cabin companion Nitz if we are in Cabin
+      if (currentMap === 'cabin') {
+        const cabinNitz = activeMeshes.find(m => m.name === 'companion_nitz');
+        if (cabinNitz) {
+          const ud = cabinNitz.userData;
+          if (ud && ud.body) {
+            const breath = 1.0 + Math.sin(timer * 1.2) * 0.03;
+            ud.body.scale.set(breath, 1.0 / breath, breath);
+            if (ud.leftEar && ud.rightEar && ud.phase >= 2) {
+              ud.leftEar.rotation.z = -0.4 + Math.sin(timer * 2) * 0.05;
+              ud.rightEar.rotation.z = 0.4 - Math.sin(timer * 2) * 0.05;
+            }
+            if (ud.tail) {
+              let segment = ud.tail.children[0];
+              let depth = 0;
+              while (segment && depth < 6) {
+                segment.rotation.z = Math.sin(timer * 3 - depth * 0.5) * 0.15;
+                const nextJoint = segment.parent?.children.find((c: any) => c !== segment);
+                segment = nextJoint ? nextJoint.children[0] : null;
+                depth++;
+              }
+            }
+          }
+        }
+      }
+
       // Animate summoned companion follow behavior
       if (companionMesh) {
         let targetX = cameraRef.current ? cameraRef.current.position.x - Math.sin(cameraAngle) * 1.5 + Math.cos(cameraAngle) * 1.1 : playerX - Math.sin(cameraAngle) * 1.5 + Math.cos(cameraAngle) * 1.1;
         let targetZ = cameraRef.current ? cameraRef.current.position.z + Math.cos(cameraAngle) * 1.5 + Math.sin(cameraAngle) * 1.1 : playerZ + Math.cos(cameraAngle) * 1.5 + Math.sin(cameraAngle) * 1.1;
-        let targetY = 1.35 + Math.sin(timer * 2.5) * 0.18;
+        
+        const diffX = targetX - companionMesh.position.x;
+        const diffZ = targetZ - companionMesh.position.z;
+        const distance = Math.sqrt(diffX * diffX + diffZ * diffZ);
+        const isMoving = distance > 0.3;
+
+        let targetY = 1.35 + Math.sin(timer * (isMoving ? 8.0 : 2.5)) * (isMoving ? 0.25 : 0.1);
 
         if (strikeNodeRef.current) {
           targetX = strikeNodeRef.current.x;
@@ -1673,7 +2318,20 @@ export function FirstPersonWorld({
         companionMesh.position.z += (targetZ - companionMesh.position.z) * 0.08;
         companionMesh.position.y += (targetY - companionMesh.position.y) * 0.08;
 
-        companionMesh.rotation.y += 0.025;
+        if (distance > 0.1) {
+          const moveAngle = Math.atan2(diffX, diffZ);
+          let diffRot = moveAngle - companionMesh.rotation.y;
+          diffRot = Math.atan2(Math.sin(diffRot), Math.cos(diffRot));
+          companionMesh.rotation.y += diffRot * 0.1;
+        } else {
+          // Look at player/camera
+          const lookAtX = cameraRef.current ? cameraRef.current.position.x : playerX;
+          const lookAtZ = cameraRef.current ? cameraRef.current.position.z : playerZ;
+          const playerAngle = Math.atan2(lookAtX - companionMesh.position.x, lookAtZ - companionMesh.position.z);
+          let diffRot = playerAngle - companionMesh.rotation.y;
+          diffRot = Math.atan2(Math.sin(diffRot), Math.cos(diffRot));
+          companionMesh.rotation.y += diffRot * 0.05;
+        }
 
         // Detailed animation from userData
         const ud = companionMesh.userData;
@@ -2173,22 +2831,22 @@ export function FirstPersonWorld({
         }
       }
     } else if (nearNode.type === 'door_vecindario') {
-      setCurrentMap('neighborhood');
+      changeMap('neighborhood');
       triggerNotification("🏘️ Has entrado al Vecindario de la Aldea Estelar");
     } else if (nearNode.type === 'door_cabin') {
-      setCurrentMap('cabin');
+      changeMap('cabin');
       triggerNotification("🏠 Entrando a tu Cabaña de Origen...");
     } else if (nearNode.type === 'door_lobby') {
-      setCurrentMap('lobby');
+      changeMap('lobby');
       triggerNotification("💎 Entrando a la Gran Plaza Central del Lobby");
     } else if (nearNode.type === 'door_map1') {
-      setCurrentMap('map1');
+      changeMap('map1');
       triggerNotification("🌲 Has viajado al Bosque Seguro (Fácil/Seguro)");
     } else if (nearNode.type === 'door_map2') {
-      setCurrentMap('map2');
+      changeMap('map2');
       triggerNotification("🪨 Has viajado a la Cantera Estelar (Medio/Materiales)");
     } else if (nearNode.type === 'door_map3') {
-      setCurrentMap('map3');
+      changeMap('map3');
       triggerNotification("💀 ¡ALERTA! Has entrado a la Zona de Bruma de Sangre (Zona Roja: Elite/PvP)");
     } else if (nearNode.type === 'door_arena') {
       setActiveOverlay('arena');
@@ -2696,6 +3354,18 @@ export function FirstPersonWorld({
               <span className="text-[10px] bg-white/5 text-[#dec1ac] px-2 py-0.5 rounded-full font-mono">
                 X: {playerX.toFixed(1)} | Z: {playerZ.toFixed(1)}
               </span>
+              {/* Health Bar HUD */}
+              <div className="flex items-center gap-2 bg-red-950/20 border border-red-500/20 px-2.5 py-0.5 rounded-full text-[10px] font-mono text-red-400">
+                <Heart className="w-3 h-3 text-red-500 fill-red-500 animate-pulse" />
+                <span className="font-bold">HP:</span>
+                <span className="font-bold">{progress.hp !== undefined ? progress.hp : 100}/{progress.maxHp || 100}</span>
+                <div className="w-16 bg-red-950 h-1.5 rounded-full overflow-hidden border border-red-500/10">
+                  <div 
+                    className="bg-gradient-to-r from-red-600 to-red-400 h-full transition-all duration-300"
+                    style={{ width: `${Math.max(0, Math.min(100, (((progress.hp !== undefined ? progress.hp : 100) / (progress.maxHp || 100)) * 100)))}%` }}
+                  />
+                </div>
+              </div>
             </div>
             <span className="text-[10px] text-gray-400 block -mt-1 font-mono uppercase">
               {currentMap === 'cabin' && 'INTERIOR COZY • TU COMPAÑERO NITZ DESCANSA AQUÍ'}
@@ -3521,6 +4191,26 @@ export function FirstPersonWorld({
           </div>
         </div>
       )}
+
+      {/* Map transition fade overlay */}
+      <AnimatePresence>
+        {mapTransitioning && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.25 }}
+            className="absolute inset-0 bg-[#090a14] z-50 flex flex-col items-center justify-center pointer-events-none"
+          >
+            <div className="flex flex-col items-center gap-3 text-center">
+              <RefreshCw className="w-8 h-8 text-amber-500 animate-spin" style={{ animationDuration: '2s' }} />
+              <span className="text-[#dec1ac] text-xs font-bold font-mono tracking-widest uppercase animate-pulse">
+                Sincronizando Resonancia de Zona...
+              </span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
     </div>
   );
