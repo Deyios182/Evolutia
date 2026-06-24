@@ -856,6 +856,7 @@ export function FirstPersonWorld({
   const cameraPitchRef = useRef<number>(0);
   const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
   const activeNodesRef = useRef<InteractiveNode3D[]>([]);
+  const activeMeshesRef = useRef<THREE.Object3D[]>([]);
   const tempBagRef = useRef<GatheringInventory>(tempBag);
   const maxWeightRef = useRef<number>(30);
   const extractionXRef = useRef<number>(0);
@@ -2098,6 +2099,8 @@ export function FirstPersonWorld({
       }
     }
 
+    activeMeshesRef.current = activeMeshes;
+
     // Define colors dictionary for emotion mappings
     const colorsDict: Record<EmotionName, number> = {
       Ira: 0xef4444, Miedo: 0xa855f7, Tristeza: 0x3b82f6, Alegría: 0xfacc15,
@@ -3052,6 +3055,7 @@ export function FirstPersonWorld({
     ob.observe(mountRef.current);
 
     return () => {
+      activeMeshesRef.current = [];
       cancelAnimationFrame(animId);
       ob.disconnect();
       dom.removeEventListener('mousedown', handleMouseDown);
@@ -3143,7 +3147,7 @@ export function FirstPersonWorld({
       let nextZ = Math.max(-limitValue, Math.min(limitValue, curZ + dz));
 
       // Solid collision check for decorative elements and interactables
-      activeMeshes.forEach(mesh => {
+      activeMeshesRef.current.forEach(mesh => {
         if (mesh.name && (mesh.name.startsWith('deco_') || mesh.name.startsWith('tr_') || mesh.name.startsWith('or_') || mesh.name.startsWith('workbench_') || mesh.name === 'stash')) {
           const dist = Math.sqrt(Math.pow(nextX - mesh.position.x, 2) + Math.pow(nextZ - mesh.position.z, 2));
           const collisionDist = mesh.name.startsWith('deco_') ? 1.0 : 1.5;
