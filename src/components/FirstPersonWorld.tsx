@@ -2578,11 +2578,6 @@ export function FirstPersonWorld({
       }
     };
 
-    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean; isNebulaPulse?: boolean }[] = [];
-    let lastNitzAttack = 0;
-
-    const activeEnemies: LocalEnemy[] = [];
-
     // Spawn local NPC enemies depending on map
     let enemyConfigs: { id: string; name: string; x: number; z: number; hp: number; maxHp: number; damage: number; speed: number; type: 'green_slime' | 'rock_golem' | 'abyss_demon' }[] = [];
     
