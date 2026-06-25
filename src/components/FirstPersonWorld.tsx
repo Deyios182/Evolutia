@@ -1011,6 +1011,7 @@ export function FirstPersonWorld({
   }, [progress, onSaveProgress]);
 
   const handleInteractNearNodeRef = useRef<() => void>(() => {});
+  const triggerSpecialSkillRef = useRef<() => void>(() => {});
 
   // Elements references for Three.js
   const mountRef = useRef<HTMLDivElement | null>(null);
