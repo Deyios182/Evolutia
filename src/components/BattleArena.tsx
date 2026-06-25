@@ -14,14 +14,29 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   
   // Equipments from progress
-  const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
+  const weapons = progress.craftedItems.filter(item => 
+    item.subType === 'weapon' || 
+    item.subType === 'weapon_1h' || 
+    item.subType === 'weapon_2h' || 
+    item.subType === 'ranged' || 
+    item.subType === 'grimoire'
+  );
   const shields = progress.craftedItems.filter(item => item.subType === 'shield');
-  const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+  const armors = progress.craftedItems.filter(item => 
+    item.subType === 'armor' || 
+    item.subType === 'chest' || 
+    item.subType === 'legs' || 
+    item.subType === 'head'
+  );
 
   // Active equipped items local copy or fallback
-  const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
+  const activeWeapon = progress.craftedItems.find(item => 
+    (item.subType === 'weapon' || item.subType === 'weapon_1h' || item.subType === 'weapon_2h' || item.subType === 'ranged' || item.subType === 'grimoire') && item.equipped
+  ) || weapons[0];
   const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
-  const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+  const activeArmor = progress.craftedItems.find(item => 
+    (item.subType === 'armor' || item.subType === 'chest' || item.subType === 'legs' || item.subType === 'head') && item.equipped
+  ) || armors[0];
 
   // Dynamic Statistics from Equips
   const getWeaponBonus = () => {
@@ -123,7 +138,16 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
   // Switch equipment dynamically in battle arena
   const handleEquipItem = (itemId: string, subType: 'weapon' | 'shield' | 'armor') => {
     const updatedCrafted = progress.craftedItems.map(item => {
-      if (item.subType === subType) {
+      let isSameType = false;
+      if (subType === 'weapon') {
+        isSameType = item.subType === 'weapon' || item.subType === 'weapon_1h' || item.subType === 'weapon_2h' || item.subType === 'ranged' || item.subType === 'grimoire';
+      } else if (subType === 'shield') {
+        isSameType = item.subType === 'shield';
+      } else if (subType === 'armor') {
+        isSameType = item.subType === 'armor' || item.subType === 'chest' || item.subType === 'legs' || item.subType === 'head';
+      }
+
+      if (isSameType) {
         return { ...item, equipped: item.id === itemId };
       }
       return item;

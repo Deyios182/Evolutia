@@ -29,7 +29,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import * as THREE from 'three';
-import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName, AvatarCustomization } from '../types';
+import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName, AvatarCustomization, EquipmentSlots } from '../types';
 import { db, auth } from '../firebase';
 
 const EMOTION_COLORS: Record<EmotionName, number> = {
@@ -755,6 +755,45 @@ interface InteractiveNode3D {
   plotOwnerId?: string; // For neighborhood houses
 }
 
+// Helper functions for equipment subtype filtering
+export function getWeaponsList(craftedItems: any[]): any[] {
+  return (craftedItems || []).filter(item => 
+    item.subType === 'weapon' || 
+    item.subType === 'weapon_1h' || 
+    item.subType === 'weapon_2h' || 
+    item.subType === 'ranged' || 
+    item.subType === 'grimoire'
+  );
+}
+
+export function getShieldsList(craftedItems: any[]): any[] {
+  return (craftedItems || []).filter(item => item.subType === 'shield');
+}
+
+export function getArmorsList(craftedItems: any[]): any[] {
+  return (craftedItems || []).filter(item => 
+    item.subType === 'armor' || 
+    item.subType === 'chest' || 
+    item.subType === 'legs' || 
+    item.subType === 'head'
+  );
+}
+
+export function getActiveWeapon(craftedItems: any[]): any | undefined {
+  const list = getWeaponsList(craftedItems);
+  return list.find(item => item.equipped) || list[0];
+}
+
+export function getActiveShield(craftedItems: any[]): any | undefined {
+  const list = getShieldsList(craftedItems);
+  return list.find(item => item.equipped) || list[0];
+}
+
+export function getActiveArmor(craftedItems: any[]): any | undefined {
+  const list = getArmorsList(craftedItems);
+  return list.find(item => item.equipped) || list[0];
+}
+
 export function FirstPersonWorld({
   progress,
   onSaveProgress,
@@ -985,7 +1024,105 @@ export function FirstPersonWorld({
 
   // Action RPG States
   const [showQuickInventory, setShowQuickInventory] = useState<boolean>(false);
+  const [selectedDollSlot, setSelectedDollSlot] = useState<'mainHand' | 'offHand' | 'chest' | 'legs' | 'head' | null>(null);
+  const [dashCooldownLeft, setDashCooldownLeft] = useState<number>(0);
+  const dashCooldownLeftRef = useRef<number>(0);
+  const [skillCooldownLeft, setSkillCooldownLeft] = useState<number>(0);
+  const skillCooldownLeftRef = useRef<number>(0);
   const isDodgingRef = useRef<boolean>(false);
+
+  const handleEquipItemInWorld = (slot: keyof EquipmentSlots, item: CraftableItem | null) => {
+    const currentEquipment = { ...(progress.equipment || {}) };
+    
+    const updatedCrafted = (progress.craftedItems || []).map(ci => {
+      let belongsToCategory = false;
+      if (slot === 'mainHand') {
+        belongsToCategory = ci.subType === 'weapon' || ci.subType === 'weapon_1h' || ci.subType === 'weapon_2h' || ci.subType === 'ranged' || ci.subType === 'grimoire';
+      } else if (slot === 'offHand') {
+        belongsToCategory = ci.subType === 'shield';
+      } else if (slot === 'chest') {
+        belongsToCategory = ci.subType === 'chest' || ci.subType === 'armor';
+      } else if (slot === 'legs') {
+        belongsToCategory = ci.subType === 'legs';
+      } else if (slot === 'head') {
+        belongsToCategory = ci.subType === 'head';
+      } else if (slot === 'backpack') {
+        belongsToCategory = ci.subType === 'backpack';
+      }
+
+      if (belongsToCategory) {
+        return { ...ci, equipped: item ? ci.id === item.id : false };
+      }
+      return ci;
+    });
+
+    if (item) {
+      currentEquipment[slot] = { ...item, equipped: true };
+    } else {
+      currentEquipment[slot] = null;
+    }
+
+    let extraHp = 0;
+    Object.values(currentEquipment).forEach(eqItem => {
+      if (eqItem && eqItem.statBonus && eqItem.statBonus.startsWith('HP+')) {
+        const hpVal = parseInt(eqItem.statBonus.replace('HP+', ''), 10);
+        if (!isNaN(hpVal)) extraHp += hpVal;
+      }
+    });
+
+    const baseMaxHp = 150 + progress.phase * 30;
+    const newMaxHp = baseMaxHp + extraHp;
+
+    const nextProg: PlayerProgress = {
+      ...progress,
+      equipment: currentEquipment,
+      craftedItems: updatedCrafted,
+      maxHp: newMaxHp,
+      hp: Math.min(progress.hp, newMaxHp)
+    };
+
+    onSaveProgress(nextProg);
+    
+    if (auth.currentUser) {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      updateDoc(userRef, {
+        equipment: currentEquipment,
+        craftedItems: updatedCrafted,
+        maxHp: newMaxHp,
+        hp: Math.min(progress.hp, newMaxHp)
+      }).catch(err => console.error("Error updating equipment in DB:", err));
+    }
+
+    triggerNotification(item ? `🛡️ Te has equipado: ${item.name}` : `🛡️ Has desequipado la ranura ${slot.toUpperCase()}`);
+  };
+
+  // Evade Dash trigger
+  const triggerEvadeDash = () => {
+    if (dashCooldownLeftRef.current > 0 || isDodgingRef.current) return;
+    isDodgingRef.current = true;
+    dashCooldownLeftRef.current = 3.0;
+    setDashCooldownLeft(3.0);
+
+    // Play whoosh sound
+    try {
+      const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = audioCtx.createOscillator();
+      const gain = audioCtx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(150, audioCtx.currentTime);
+      osc.frequency.exponentialRampToValueAtTime(600, audioCtx.currentTime + 0.15);
+      gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+      osc.connect(gain);
+      gain.connect(audioCtx.destination);
+      osc.start();
+      osc.stop(audioCtx.currentTime + 0.15);
+    } catch (_) {}
+
+    setTimeout(() => {
+      isDodgingRef.current = false;
+    }, 150);
+  };
 
   // Setup initial key listeners
   useEffect(() => {
@@ -1004,13 +1141,19 @@ export function FirstPersonWorld({
       keysRef.current[k] = true;
       setKeys({ ...keysDownRef.current });
 
-      // Action RPG Dodge (Alt)
-      if (k === 'alt') {
+      // Action RPG Dodge (V key)
+      if (k === 'v') {
         e.preventDefault();
-        if (!isDodgingRef.current && activeOverlayRef.current === 'none') {
-           isDodgingRef.current = true;
-           // I-frames / Dash window
-           setTimeout(() => { isDodgingRef.current = false; }, 500);
+        if (dashCooldownLeftRef.current <= 0 && !isDodgingRef.current && activeOverlayRef.current === 'none') {
+          triggerEvadeDash();
+        }
+      }
+
+      // Special Ability (Q key)
+      if (k === 'q') {
+        e.preventDefault();
+        if (skillCooldownLeftRef.current <= 0 && activeOverlayRef.current === 'none') {
+          triggerSpecialSkillRef.current();
         }
       }
 
@@ -1042,8 +1185,8 @@ export function FirstPersonWorld({
         triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
       }
 
-      // If user presses V, activate proximity voice chat
-      if ((e.key === 'v' || e.key === 'V') && activeOverlayRef.current === 'none') {
+      // If user presses G, activate proximity voice chat
+      if ((e.key === 'g' || e.key === 'G') && activeOverlayRef.current === 'none') {
         setIsProximityChatActive(true);
       }
     };
@@ -1054,7 +1197,7 @@ export function FirstPersonWorld({
       keysRef.current[k] = false;
       setKeys({ ...keysDownRef.current });
 
-      if (e.key === 'v' || e.key === 'V') {
+      if (e.key === 'g' || e.key === 'G') {
         setIsProximityChatActive(false);
       }
     };
@@ -2135,7 +2278,307 @@ export function FirstPersonWorld({
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean }[] = [];
+    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean; isNebulaPulse?: boolean }[] = [];
+    let lastNitzAttack = 0;
+
+    const activeEnemies: LocalEnemy[] = [];
+    const activeCoins: { mesh: THREE.Mesh; value: number }[] = [];
+    const customEffects: { mesh: THREE.Mesh; update: () => boolean }[] = [];
+
+    // Helper to draw floating 3D health bar sprite above enemies
+    const createEnemyHealthBarSprite = (enemy: LocalEnemy) => {
+      const canvas = document.createElement('canvas');
+      canvas.width = 128;
+      canvas.height = 16;
+      const ctx = canvas.getContext('2d')!;
+
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(0, 0, 128, 16);
+
+      ctx.fillStyle = '#ef4444';
+      const hpPercent = Math.max(0, enemy.hp / enemy.maxHp);
+      ctx.fillRect(0, 0, 128 * hpPercent, 16);
+
+      const texture = new THREE.CanvasTexture(canvas);
+      const spriteMat = new THREE.SpriteMaterial({ map: texture, transparent: true });
+      const sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(1.5, 0.2, 1);
+      sprite.position.copy(enemy.mesh.position);
+      sprite.position.y += (enemy.type === 'rock_golem' ? 2.5 : enemy.type === 'green_slime' ? 1.4 : 2.8);
+      
+      scene.add(sprite);
+      enemy.mesh.userData.healthBarSprite = sprite;
+      enemy.mesh.userData.healthBarTexture = texture;
+      enemy.mesh.userData.healthBarCanvas = canvas;
+      enemy.mesh.userData.healthBarCtx = ctx;
+    };
+
+    // Helper to handle enemy defeat (coins, slimes splitting, resources)
+    const handleEnemyDefeat = (enemy: LocalEnemy, isPlayerProjectile: boolean) => {
+      enemy.isDead = true;
+      enemy.respawnTimer = 0;
+      enemy.mesh.visible = false;
+      
+      let expGained = 15;
+      let goldGained = 8;
+      let resourceType: 'wood' | 'stone' | 'metal' | 'essence' = 'wood';
+      let resourceRarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common';
+      let resourceCount = 1;
+
+      if (enemy.type === 'green_slime') {
+        expGained = 18;
+        goldGained = 10;
+        resourceType = Math.random() > 0.5 ? 'wood' : 'essence';
+        resourceRarity = Math.random() > 0.8 ? 'rare' : 'common';
+        resourceCount = Math.floor(Math.random() * 2) + 1;
+      } else if (enemy.type === 'rock_golem') {
+        expGained = 35;
+        goldGained = 25;
+        resourceType = 'stone';
+        resourceRarity = Math.random() > 0.7 ? 'epic' : 'rare';
+        resourceCount = Math.floor(Math.random() * 2) + 1;
+      } else if (enemy.type === 'abyss_demon') {
+        expGained = 75;
+        goldGained = 60;
+        resourceType = 'metal';
+        resourceRarity = Math.random() > 0.6 ? 'epic' : 'legendary';
+        resourceCount = Math.floor(Math.random() * 2) + 1;
+      }
+
+      // 1. Drop physical 3D gold coins
+      const coinsCount = Math.max(1, Math.floor(goldGained / 4));
+      for (let c = 0; c < coinsCount; c++) {
+        const coinGeo = new THREE.TorusGeometry(0.12, 0.04, 8, 16);
+        const coinMat = new THREE.MeshStandardMaterial({
+          color: 0xffd700,
+          emissive: 0xd97706,
+          metalness: 0.9,
+          roughness: 0.1
+        });
+        const coinMesh = new THREE.Mesh(coinGeo, coinMat);
+        coinMesh.position.set(
+          enemy.mesh.position.x + (Math.random() - 0.5) * 1.5,
+          0.3,
+          enemy.mesh.position.z + (Math.random() - 0.5) * 1.5
+        );
+        coinMesh.rotation.x = Math.PI / 2;
+        scene.add(coinMesh);
+        activeCoins.push({
+          mesh: coinMesh,
+          value: Math.floor(goldGained / coinsCount)
+        });
+      }
+
+      // 2. Slime splitting mechanic (Map 1)
+      if (enemy.type === 'green_slime' && !enemy.id.includes('_mini')) {
+        for (let s = 1; s <= 2; s++) {
+          const miniId = `${enemy.id}_mini_${s}_${Date.now()}`;
+          const miniConf = {
+            id: miniId,
+            name: 'Mini Slime Dividido',
+            x: enemy.mesh.position.x + (s === 1 ? -1.0 : 1.0),
+            z: enemy.mesh.position.z + (Math.random() - 0.5),
+            hp: 25,
+            maxHp: 25,
+            damage: 3,
+            speed: 3.0,
+            type: 'green_slime' as const
+          };
+
+          const miniMesh = createDetailedEnemyMesh(miniConf.type);
+          miniMesh.scale.set(0.35, 0.35, 0.35);
+          miniMesh.position.set(miniConf.x, 0.3, miniConf.z);
+          scene.add(miniMesh);
+
+          const miniEnemy: LocalEnemy = {
+            ...miniConf,
+            mesh: miniMesh,
+            spawnX: miniConf.x,
+            spawnZ: miniConf.z,
+            isDead: false,
+            respawnTimer: -99999, // Mini slimes do not respawn
+            lastAttackTime: timer,
+            wanderAngle: Math.random() * Math.PI * 2,
+            wanderTimer: 2.0,
+            flashTimer: 0
+          };
+          
+          activeEnemies.push(miniEnemy);
+          createEnemyHealthBarSprite(miniEnemy);
+        }
+      }
+
+      // Add resources
+      setTempBag(tb => {
+        const b = { ...tb };
+        b[resourceType][resourceRarity] += resourceCount;
+        return b;
+      });
+
+      onSaveProgressRef.current({
+        ...progressRef.current,
+        exp: progressRef.current.exp + expGained
+      });
+
+      triggerNotification(`⭐ ¡Derrotaste a ${enemy.name}! Recibes +${expGained} EXP y materiales.`);
+    };
+
+    // Special Skill Trigger Binding
+    triggerSpecialSkillRef.current = () => {
+      if (skillCooldownLeftRef.current > 0) return;
+
+      const equippedWeapon = progressRef.current.equipment?.mainHand;
+      const type = equippedWeapon?.subType; // weapon_1h, ranged, grimoire...
+
+      setSkillCooldownLeft(8.0);
+      skillCooldownLeftRef.current = 8.0;
+
+      // Play special ability tone
+      try {
+        const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(300, audioCtx.currentTime);
+        osc.frequency.linearRampToValueAtTime(800, audioCtx.currentTime + 0.3);
+        gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.3);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.35);
+      } catch (_) {}
+
+      if (type === 'weapon_1h' || type === 'weapon_2h' || type === 'weapon') {
+        // Sword Whirlwind
+        const ringGeo = new THREE.RingGeometry(0.1, 5.0, 32);
+        ringGeo.rotateX(-Math.PI / 2);
+        const ringMat = new THREE.MeshBasicMaterial({
+          color: 0xffffff,
+          side: THREE.DoubleSide,
+          transparent: true,
+          opacity: 0.8
+        });
+        const spinRing = new THREE.Mesh(ringGeo, ringMat);
+        spinRing.position.set(camera.position.x, 0.2, camera.position.z);
+        scene.add(spinRing);
+
+        const spinEffect = {
+          mesh: spinRing,
+          tick: 0,
+          update() {
+            this.tick += 1;
+            this.mesh.scale.addScalar(0.1);
+            if (this.mesh.material instanceof THREE.Material) {
+              this.mesh.material.opacity = Math.max(0, 0.8 - this.tick * 0.05);
+            }
+            if (this.tick >= 16) {
+              scene.remove(this.mesh);
+              this.mesh.geometry.dispose();
+              (this.mesh.material as THREE.Material).dispose();
+              return true;
+            }
+            return false;
+          }
+        };
+        customEffects.push(spinEffect);
+
+        activeEnemies.forEach(enemy => {
+          if (enemy.isDead) return;
+          const dist = camera.position.distanceTo(enemy.mesh.position);
+          if (dist <= 6.0) {
+            enemy.hp -= 50;
+            enemy.flashTimer = 0.3;
+            enemy.mesh.scale.multiplyScalar(1.2);
+            if (enemy.hp <= 0) {
+              handleEnemyDefeat(enemy, true);
+            }
+          }
+        });
+        triggerNotification("⚔️ ¡Giro de Torbellino!");
+
+      } else if (type === 'ranged') {
+        // Rifle Spread
+        const angles = [-0.25, 0, 0.25];
+        angles.forEach(a => {
+          const dir = new THREE.Vector3();
+          camera.getWorldDirection(dir);
+          dir.applyAxisAngle(new THREE.Vector3(0, 1, 0), a);
+
+          const pGeo = new THREE.CylinderGeometry(0.07, 0.07, 1.5, 8);
+          pGeo.rotateX(Math.PI / 2);
+          const pMat = new THREE.MeshBasicMaterial({ color: 0xff3b30 });
+          const pMesh = new THREE.Mesh(pGeo, pMat);
+          pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
+          pMesh.lookAt(pMesh.position.clone().add(dir));
+          scene.add(pMesh);
+          activeProjectiles.push({
+            mesh: pMesh,
+            vx: dir.x * 45.0,
+            vy: dir.y * 45.0,
+            vz: dir.z * 45.0,
+            life: 80,
+            isNitz: false
+          });
+        });
+        triggerNotification("🔫 ¡Ráfaga de Plomo!");
+
+      } else if (type === 'grimoire') {
+        // Grimoire Exploding Nebula
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+
+        const pGeo = new THREE.SphereGeometry(1.0, 16, 16);
+        const pMat = new THREE.MeshBasicMaterial({
+          color: 0xef4444,
+          transparent: true,
+          opacity: 0.9
+        });
+        const pMesh = new THREE.Mesh(pGeo, pMat);
+        pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
+        scene.add(pMesh);
+
+        activeProjectiles.push({
+          mesh: pMesh,
+          vx: dir.x * 8.0,
+          vy: dir.y * 8.0,
+          vz: dir.z * 8.0,
+          life: 90,
+          isNitz: false,
+          isNebulaPulse: true
+        });
+        triggerNotification("🔮 ¡Pulso de Nebulosa!");
+
+      } else {
+        // Fists Lunge
+        const dir = new THREE.Vector3();
+        camera.getWorldDirection(dir);
+        isDodgingRef.current = true;
+        setTimeout(() => { isDodgingRef.current = false; }, 200);
+
+        playerXRef.current += dir.x * 4.0;
+        playerZRef.current += dir.z * 4.0;
+
+        activeEnemies.forEach(enemy => {
+          if (enemy.isDead) return;
+          const dist = camera.position.distanceTo(enemy.mesh.position);
+          if (dist <= 4.0) {
+            enemy.hp -= 25;
+            enemy.flashTimer = 0.3;
+            const knockDir = new THREE.Vector3().subVectors(enemy.mesh.position, camera.position).normalize();
+            enemy.mesh.position.x += knockDir.x * 4.0;
+            enemy.mesh.position.z += knockDir.z * 4.0;
+
+            if (enemy.hp <= 0) {
+              handleEnemyDefeat(enemy, true);
+            }
+          }
+        });
+        triggerNotification("👊 ¡Embestida de Fuerza!");
+      }
+    };
+
+    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean; isNebulaPulse?: boolean }[] = [];
     let lastNitzAttack = 0;
 
     const activeEnemies: LocalEnemy[] = [];
@@ -2221,7 +2664,7 @@ export function FirstPersonWorld({
           } catch (_) {}
 
           // Spawn Player Projectile/Strike based on Equipped Weapon
-          const activeWep = progress.equipment?.mainHand?.subType;
+          const activeWep = progressRef.current.equipment?.mainHand?.subType;
           
           let pGeo: THREE.BufferGeometry;
           let pMat: THREE.MeshBasicMaterial;
@@ -2476,51 +2919,7 @@ export function FirstPersonWorld({
               
               // Defeated check
               if (enemy.hp <= 0) {
-                enemy.isDead = true;
-                enemy.respawnTimer = 0;
-                enemy.mesh.visible = false;
-                
-                let expGained = 15;
-                let goldGained = 8;
-                let resourceType: 'wood' | 'stone' | 'metal' | 'essence' = 'wood';
-                let resourceRarity: 'common' | 'rare' | 'epic' | 'legendary' = 'common';
-                let resourceCount = 1;
-
-                if (enemy.type === 'green_slime') {
-                  expGained = 18;
-                  goldGained = 10;
-                  resourceType = Math.random() > 0.5 ? 'wood' : 'essence';
-                  resourceRarity = Math.random() > 0.8 ? 'rare' : 'common';
-                  resourceCount = Math.floor(Math.random() * 2) + 1;
-                } else if (enemy.type === 'rock_golem') {
-                  expGained = 35;
-                  goldGained = 25;
-                  resourceType = 'stone';
-                  resourceRarity = Math.random() > 0.7 ? 'epic' : 'rare';
-                  resourceCount = Math.floor(Math.random() * 2) + 1;
-                } else if (enemy.type === 'abyss_demon') {
-                  expGained = 75;
-                  goldGained = 60;
-                  resourceType = 'metal';
-                  resourceRarity = Math.random() > 0.6 ? 'epic' : 'legendary';
-                  resourceCount = Math.floor(Math.random() * 2) + 1;
-                }
-
-                // Add to temporary bag
-                setTempBag(tb => {
-                  const b = { ...tb };
-                  b[resourceType][resourceRarity] += resourceCount;
-                  return b;
-                });
-
-                // Update EXP and Gold
-                onSaveProgressRef.current({
-                  ...progressRef.current,
-                  exp: progressRef.current.exp + expGained,
-                  gold: progressRef.current.gold + goldGained
-                });
-
-                triggerNotification(`⭐ ¡Derrotaste a ${enemy.name}! +${expGained} EXP, +${goldGained} Oro y recolectas ${resourceRarity} ${resourceType}.`);
+                handleEnemyDefeat(enemy, isPlayerProjectile);
               }
               break;
             }
@@ -3036,6 +3435,122 @@ export function FirstPersonWorld({
         }
       });
 
+      // 1. Update active coins (magnet auto-pickup)
+      for (let i = activeCoins.length - 1; i >= 0; i--) {
+        const coin = activeCoins[i];
+        coin.mesh.rotation.y += 0.05;
+        
+        const distToPlayer = camera.position.distanceTo(coin.mesh.position);
+        if (distToPlayer < 5.0) {
+          const pullDir = new THREE.Vector3().subVectors(camera.position, coin.mesh.position).normalize();
+          const pullSpeed = 0.25 + (1.0 - (distToPlayer / 5.0)) * 0.4;
+          coin.mesh.position.addScaledVector(pullDir, pullSpeed);
+
+          if (distToPlayer < 1.0) {
+            scene.remove(coin.mesh);
+            coin.mesh.geometry.dispose();
+            (coin.mesh.material as THREE.Material).dispose();
+
+            onSaveProgressRef.current({
+              ...progressRef.current,
+              gold: progressRef.current.gold + coin.value
+            });
+            triggerNotification(`🪙 Recogiste +${coin.value} de Oro.`);
+
+            try {
+              const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+              const osc = audioCtx.createOscillator();
+              const gain = audioCtx.createGain();
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(987.77, audioCtx.currentTime);
+              osc.frequency.setValueAtTime(1318.51, audioCtx.currentTime + 0.08);
+              gain.gain.setValueAtTime(0.1, audioCtx.currentTime);
+              gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.25);
+              osc.connect(gain);
+              gain.connect(audioCtx.destination);
+              osc.start();
+              osc.stop(audioCtx.currentTime + 0.3);
+            } catch (_) {}
+
+            activeCoins.splice(i, 1);
+          }
+        }
+      }
+
+      // Cooldowns countdown decrements
+      if (dashCooldownLeftRef.current > 0) {
+        dashCooldownLeftRef.current = Math.max(0, dashCooldownLeftRef.current - 0.04);
+        setDashCooldownLeft(dashCooldownLeftRef.current);
+      }
+      if (skillCooldownLeftRef.current > 0) {
+        skillCooldownLeftRef.current = Math.max(0, skillCooldownLeftRef.current - 0.04);
+        setSkillCooldownLeft(skillCooldownLeftRef.current);
+      }
+
+      // 2. Update custom visual effects
+      for (let i = customEffects.length - 1; i >= 0; i--) {
+        if (customEffects[i].update()) {
+          customEffects.splice(i, 1);
+        }
+      }
+
+      // 3. Update local enemies health bars positions and redraw values
+      activeEnemies.forEach(enemy => {
+        if (enemy.isDead) {
+          if (enemy.mesh.userData.healthBarSprite) {
+            enemy.mesh.userData.healthBarSprite.visible = false;
+          }
+          return;
+        }
+
+        let sprite = enemy.mesh.userData.healthBarSprite;
+        if (!sprite) {
+          createEnemyHealthBarSprite(enemy);
+          sprite = enemy.mesh.userData.healthBarSprite;
+        }
+
+        if (sprite) {
+          sprite.visible = true;
+          sprite.position.copy(enemy.mesh.position);
+          sprite.position.y += (enemy.type === 'rock_golem' ? 2.5 : enemy.type === 'green_slime' ? 1.4 : 2.8);
+
+          const canvas = enemy.mesh.userData.healthBarCanvas;
+          const ctx = enemy.mesh.userData.healthBarCtx;
+          const texture = enemy.mesh.userData.healthBarTexture;
+          if (canvas && ctx && texture) {
+            ctx.fillStyle = 'rgba(15, 23, 42, 0.85)';
+            ctx.fillRect(0, 0, 128, 16);
+
+            const pct = Math.max(0, enemy.hp / enemy.maxHp);
+            ctx.fillStyle = pct > 0.5 ? '#10b981' : pct > 0.2 ? '#f59e0b' : '#ef4444';
+            ctx.fillRect(2, 2, 124 * pct, 12);
+
+            texture.needsUpdate = true;
+          }
+        }
+      });
+
+      // 4. Clean up dead mini-slimes from activeEnemies
+      for (let i = activeEnemies.length - 1; i >= 0; i--) {
+        const enemy = activeEnemies[i];
+        if (enemy.isDead && enemy.respawnTimer === -99999) {
+          scene.remove(enemy.mesh);
+          if (enemy.mesh.userData.healthBarSprite) {
+            scene.remove(enemy.mesh.userData.healthBarSprite);
+          }
+          activeEnemies.splice(i, 1);
+        } else if (!enemy.isDead && enemy.id.includes('_mini')) {
+          if (enemy.dissolveTimer === undefined) {
+            enemy.dissolveTimer = 15.0;
+          }
+          enemy.dissolveTimer -= 0.04;
+          if (enemy.dissolveTimer <= 0) {
+            enemy.isDead = true;
+            enemy.respawnTimer = -99999;
+          }
+        }
+      }
+
       renderer.render(scene, camera);
     };
 
@@ -3065,6 +3580,24 @@ export function FirstPersonWorld({
       dom.removeEventListener('touchmove', handleTouchMove);
       dom.removeEventListener('touchend', handleTouchEnd);
       
+      activeCoins.forEach(c => {
+        scene.remove(c.mesh);
+        c.mesh.geometry.dispose();
+        (c.mesh.material as THREE.Material).dispose();
+      });
+
+      customEffects.forEach(e => {
+        scene.remove(e.mesh);
+        e.mesh.geometry.dispose();
+        (e.mesh.material as THREE.Material).dispose();
+      });
+
+      activeEnemies.forEach(e => {
+        if (e.mesh.userData.healthBarSprite) {
+          scene.remove(e.mesh.userData.healthBarSprite);
+        }
+      });
+
       if (mountRef.current && renderer.domElement) {
         mountRef.current.removeChild(renderer.domElement);
       }
@@ -3346,7 +3879,17 @@ export function FirstPersonWorld({
       // Click mining actions directly in 3D
       setActiveNodes(prev => prev.map(n => {
         if (n.id === nearNode.id) {
-          const nextClicks = (n.clicksCurrent || 0) + (progress.companionSummoned ? 2 : 1);
+          let weaponHarvestPower = 1;
+          const activeWep = progress.equipment?.mainHand?.subType;
+          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h' || activeWep === 'weapon') {
+            weaponHarvestPower = 2;
+          } else if (activeWep === 'ranged') {
+            weaponHarvestPower = 3;
+          } else if (activeWep === 'grimoire') {
+            weaponHarvestPower = 2;
+          }
+
+          const nextClicks = (n.clicksCurrent || 0) + weaponHarvestPower + (progress.companionSummoned ? 1 : 0);
           const req = n.clicksRequired || 4;
 
           if (nextClicks >= req) {
@@ -3400,13 +3943,13 @@ export function FirstPersonWorld({
       return;
     }
 
-    const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
-    const shields = progress.craftedItems.filter(item => item.subType === 'shield');
-    const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+    const weapons = getWeaponsList(progress.craftedItems);
+    const shields = getShieldsList(progress.craftedItems);
+    const armors = getArmorsList(progress.craftedItems);
 
-    const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
-    const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
-    const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+    const activeWeapon = getActiveWeapon(progress.craftedItems);
+    const activeShield = getActiveShield(progress.craftedItems);
+    const activeArmor = getActiveArmor(progress.craftedItems);
 
     const cWeapon = activeWeapon ? activeWeapon.name : '';
     const cShieldItem = activeShield ? activeShield.name : '';
@@ -3460,13 +4003,13 @@ export function FirstPersonWorld({
     if (!pendingDuelInvite) return;
     
     const docRef = doc(db, 'pvp_duels', pendingDuelInvite.id);
-    const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
-    const shields = progress.craftedItems.filter(item => item.subType === 'shield');
-    const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+    const weapons = getWeaponsList(progress.craftedItems);
+    const shields = getShieldsList(progress.craftedItems);
+    const armors = getArmorsList(progress.craftedItems);
 
-    const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
-    const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
-    const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+    const activeWeapon = getActiveWeapon(progress.craftedItems);
+    const activeShield = getActiveShield(progress.craftedItems);
+    const activeArmor = getActiveArmor(progress.craftedItems);
 
     const dWeapon = activeWeapon ? activeWeapon.name : '';
     const dShieldItem = activeShield ? activeShield.name : '';
@@ -3803,13 +4346,13 @@ export function FirstPersonWorld({
     }
   };
 
-  const weapons = progress.craftedItems.filter(item => item.subType === 'weapon');
-  const shields = progress.craftedItems.filter(item => item.subType === 'shield');
-  const armors = progress.craftedItems.filter(item => item.subType === 'armor');
+  const weapons = getWeaponsList(progress.craftedItems);
+  const shields = getShieldsList(progress.craftedItems);
+  const armors = getArmorsList(progress.craftedItems);
 
-  const activeWeapon = progress.craftedItems.find(item => item.subType === 'weapon' && item.equipped) || weapons[0];
-  const activeShield = progress.craftedItems.find(item => item.subType === 'shield' && item.equipped) || shields[0];
-  const activeArmor = progress.craftedItems.find(item => item.subType === 'armor' && item.equipped) || armors[0];
+  const activeWeapon = getActiveWeapon(progress.craftedItems);
+  const activeShield = getActiveShield(progress.craftedItems);
+  const activeArmor = getActiveArmor(progress.craftedItems);
 
   const activeWeaponSkillName = activeWeapon?.name.includes('Sable del Alba') ? 'Ira Solar' : activeWeapon?.name.includes('Mandoble') ? 'Tajo Sombrío' : 'Corte Rápido';
   const activeShieldSkillName = activeShield?.name.includes('Estelares') ? 'Barrera Rúnica' : 'Guardia Simple';
@@ -4198,6 +4741,75 @@ export function FirstPersonWorld({
           </div>
         )}
 
+        {/* Bottom Center Skill and Dodge HUD */}
+        {activeOverlay === 'none' && !pvpDuel?.inCombat && (
+          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex gap-6 items-center bg-black/75 border border-white/10 px-5 py-3 rounded-2xl backdrop-blur-md">
+            {/* Dodge Dash slot (V) */}
+            <div className="flex flex-col items-center gap-1">
+              <div 
+                onClick={triggerEvadeDash}
+                className={`relative w-12 h-12 flex items-center justify-center bg-white/5 border rounded-full group cursor-pointer hover:border-emerald-500 hover:bg-emerald-950/20 transition-all ${
+                  dashCooldownLeft > 0 ? 'border-red-500/50 bg-red-950/10' : 'border-white/10'
+                }`}
+              >
+                {/* Cooldown SVG Ring */}
+                <svg className="absolute inset-0 -rotate-90 w-full h-full">
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="20"
+                    stroke={dashCooldownLeft > 0 ? "rgba(239, 68, 68, 0.6)" : "rgba(16, 185, 129, 0.4)"}
+                    strokeWidth="3.5"
+                    fill="transparent"
+                    strokeDasharray="125.6"
+                    strokeDashoffset={dashCooldownLeft > 0 ? 125.6 * (1 - dashCooldownLeft / 3.0) : 0}
+                    className="transition-all duration-100"
+                  />
+                </svg>
+                <span className="text-[9px] font-bold text-white group-hover:scale-110 transition-transform select-none">DODGE</span>
+                <span className="absolute bottom-0 bg-[#0d0e1b] text-gray-400 border border-white/10 rounded px-1 text-[7px] font-mono select-none">V</span>
+              </div>
+              <span className="text-[8px] font-mono text-gray-400">
+                {dashCooldownLeft > 0 ? `${dashCooldownLeft.toFixed(1)}s` : 'LISTO'}
+              </span>
+            </div>
+
+            {/* Weapon Special Ability slot (Q) */}
+            <div className="flex flex-col items-center gap-1">
+              <div 
+                onClick={() => {
+                  if (skillCooldownLeft <= 0) {
+                    triggerSpecialSkillRef.current();
+                  }
+                }}
+                className={`relative w-12 h-12 flex items-center justify-center bg-white/5 border rounded-full group cursor-pointer hover:border-purple-500 hover:bg-purple-950/20 transition-all ${
+                  skillCooldownLeft > 0 ? 'border-red-500/50 bg-red-950/10' : 'border-white/10'
+                }`}
+              >
+                {/* Cooldown SVG Ring */}
+                <svg className="absolute inset-0 -rotate-90 w-full h-full">
+                  <circle
+                    cx="24"
+                    cy="24"
+                    r="20"
+                    stroke={skillCooldownLeft > 0 ? "rgba(239, 68, 68, 0.6)" : "rgba(168, 85, 247, 0.5)"}
+                    strokeWidth="3.5"
+                    fill="transparent"
+                    strokeDasharray="125.6"
+                    strokeDashoffset={skillCooldownLeft > 0 ? 125.6 * (1 - skillCooldownLeft / 8.0) : 0}
+                    className="transition-all duration-100"
+                  />
+                </svg>
+                <span className="text-[9px] font-bold text-white group-hover:scale-110 transition-transform select-none">HABIL.</span>
+                <span className="absolute bottom-0 bg-[#0d0e1b] text-gray-400 border border-white/10 rounded px-1 text-[7px] font-mono select-none">Q</span>
+              </div>
+              <span className="text-[8px] font-mono text-purple-400">
+                {skillCooldownLeft > 0 ? `${skillCooldownLeft.toFixed(1)}s` : 'LISTO'}
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Floating Mobile Virtual Joystick and Action Buttons */}
         {isMobile && (
           <>
@@ -4521,7 +5133,7 @@ export function FirstPersonWorld({
             className="absolute inset-2 md:inset-10 z-40 bg-[#07080c]/95 border-2 border-red-900/30 rounded-xl shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col md:flex-row overflow-hidden"
           >
             {/* Left Panel: Stats & Weight */}
-            <div className="w-full md:w-1/3 bg-black/40 border-r border-red-900/30 p-6 flex flex-col">
+            <div className="w-full md:w-1/4 bg-black/40 border-r border-red-900/30 p-6 flex flex-col">
               <h3 className="text-red-500 font-bold tracking-widest text-lg mb-6 border-b border-red-900/50 pb-2 uppercase flex items-center gap-2">
                 <Shield className="w-5 h-5" /> TACTICAL STATUS
               </h3>
@@ -4538,7 +5150,7 @@ export function FirstPersonWorld({
                     <span className="text-xs text-red-500 font-mono">/ {progress.equipment?.backpack?.weightCapacity || 30} KG MAX</span>
                   </div>
                   <div className="w-full bg-black h-2 rounded-full overflow-hidden border border-red-900/50">
-                    <div className="bg-red-600 h-full transition-all" style={{ width: `${Math.min(100, ((tempBag.wood.common * 1 + tempBag.stone.common * 2 + tempBag.metal.common * 3) / (progress.equipment?.backpack?.weightCapacity || 30)) * 100)}%` }} />
+                    <div className="bg-red-600 h-full transition-all" style={{ width: `${Math.min(100, (((tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 + (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 + (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3) / (progress.equipment?.backpack?.weightCapacity || 30)) * 100)}%` }} />
                   </div>
                 </div>
 
@@ -4555,7 +5167,7 @@ export function FirstPersonWorld({
               </div>
             </div>
 
-            {/* Right Panel: Equipment Doll */}
+            {/* Middle Panel: Equipment Doll */}
             <div className="flex-1 p-6 flex flex-col items-center justify-center relative">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500 via-transparent to-transparent pointer-events-none" />
               
@@ -4563,9 +5175,14 @@ export function FirstPersonWorld({
                 
                 {/* Left Column (Main Hand, Rings) */}
                 <div className="space-y-4 flex flex-col items-end">
-                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center p-1 relative group">
+                  <div 
+                    onClick={() => setSelectedDollSlot('mainHand')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative group cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'mainHand' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-gray-500">MAIN HAND</span>
-                    <span className="text-xl mt-2">{progress.equipment?.mainHand ? '🔫' : '✋'}</span>
+                    <span className="text-xl mt-2">{progress.equipment?.mainHand ? (progress.equipment.mainHand.subType === 'ranged' ? '🔫' : progress.equipment.mainHand.subType === 'grimoire' ? '🔮' : '⚔️') : '✋'}</span>
                   </div>
                   <div className="w-12 h-12 bg-[#0a0b10] border border-gray-800 rounded-lg flex flex-col items-center justify-center relative">
                     <span className="text-[7px] absolute top-1 text-gray-600">RING 1</span>
@@ -4574,15 +5191,30 @@ export function FirstPersonWorld({
 
                 {/* Center Column (Head, Chest, Legs) */}
                 <div className="space-y-4 flex flex-col items-center">
-                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center relative">
+                  <div 
+                    onClick={() => setSelectedDollSlot('head')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'head' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-gray-500">HEAD</span>
                     <span className="text-xl mt-2">{progress.equipment?.head ? '🪖' : '👤'}</span>
                   </div>
-                  <div className="w-20 h-24 bg-[#0a0b10] border border-gray-600 rounded-lg flex flex-col items-center justify-center relative shadow-[0_0_15px_rgba(255,0,0,0.1)]">
+                  <div 
+                    onClick={() => setSelectedDollSlot('chest')}
+                    className={`w-20 h-24 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'chest' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-600'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-gray-400">CHEST RIG</span>
                     <span className="text-3xl mt-2">{progress.equipment?.chest ? '🦺' : '👕'}</span>
                   </div>
-                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center relative">
+                  <div 
+                    onClick={() => setSelectedDollSlot('legs')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'legs' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-gray-500">LEGS</span>
                     <span className="text-xl mt-2">{progress.equipment?.legs ? '🥾' : '👖'}</span>
                   </div>
@@ -4590,11 +5222,21 @@ export function FirstPersonWorld({
 
                 {/* Right Column (Off Hand, Backpack) */}
                 <div className="space-y-4 flex flex-col items-start">
-                  <div className="w-16 h-16 bg-[#0a0b10] border border-gray-700 rounded-lg flex flex-col items-center justify-center p-1 relative">
+                  <div 
+                    onClick={() => setSelectedDollSlot('offHand')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'offHand' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-gray-500">OFF HAND</span>
                     <span className="text-xl mt-2">{progress.equipment?.offHand ? '🛡️' : '❌'}</span>
                   </div>
-                  <div className="w-16 h-16 bg-[#1a0f0f] border border-red-900/50 rounded-lg flex flex-col items-center justify-center relative">
+                  <div 
+                    onClick={() => setSelectedDollSlot('backpack')}
+                    className={`w-16 h-16 bg-[#1a0f0f] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#1f1212] ${
+                      selectedDollSlot === 'backpack' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-red-900/50'
+                    }`}
+                  >
                     <span className="text-[8px] absolute top-1 text-red-500/70">BACKPACK</span>
                     <span className="text-xl mt-2">{progress.equipment?.backpack ? '🎒' : '📦'}</span>
                   </div>
@@ -4605,6 +5247,76 @@ export function FirstPersonWorld({
                 [ Suelta TAB para cerrar interface ]
               </div>
             </div>
+
+            {/* Right Panel: Side-drawer Selector */}
+            {selectedDollSlot && (
+              <div className="w-full md:w-1/3 bg-[#0d0e1b]/95 border-l border-red-900/30 p-6 flex flex-col overflow-y-auto">
+                <div className="flex justify-between items-center border-b border-red-900/40 pb-2 mb-4">
+                  <h4 className="text-[#dec1ac] font-bold text-xs tracking-widest uppercase">
+                    Slot: {selectedDollSlot === 'mainHand' ? 'MANO PRINCIPAL' : selectedDollSlot === 'offHand' ? 'MANO SECUNDARIA' : selectedDollSlot === 'chest' ? 'PECHO / ARMADURA' : selectedDollSlot === 'legs' ? 'PIERNAS' : selectedDollSlot === 'head' ? 'CABEZA' : 'MOCHILA'}
+                  </h4>
+                  <button 
+                    onClick={() => setSelectedDollSlot(null)}
+                    className="text-gray-400 hover:text-white text-xs uppercase"
+                  >
+                    cerrar
+                  </button>
+                </div>
+                
+                <div className="space-y-2 flex-1">
+                  <button
+                    onClick={() => {
+                      handleEquipItemInWorld(selectedDollSlot, null);
+                      setSelectedDollSlot(null);
+                    }}
+                    className="w-full text-left bg-red-950/20 hover:bg-red-950/40 border border-red-500/30 text-red-400 p-2.5 rounded-lg text-xs font-bold transition-all uppercase animate-pulse"
+                  >
+                    ❌ Desequipar Ranura
+                  </button>
+                  
+                  {(() => {
+                    const eligibleItems = (progress.craftedItems || []).filter(ci => {
+                      if (selectedDollSlot === 'mainHand') {
+                        return ci.subType === 'weapon' || ci.subType === 'weapon_1h' || ci.subType === 'weapon_2h' || ci.subType === 'ranged' || ci.subType === 'grimoire';
+                      }
+                      if (selectedDollSlot === 'offHand') return ci.subType === 'shield';
+                      if (selectedDollSlot === 'chest') return ci.subType === 'chest' || ci.subType === 'armor';
+                      if (selectedDollSlot === 'legs') return ci.subType === 'legs';
+                      if (selectedDollSlot === 'head') return ci.subType === 'head';
+                      if (selectedDollSlot === 'backpack') return ci.subType === 'backpack';
+                      return false;
+                    });
+
+                    if (eligibleItems.length === 0) {
+                      return <p className="text-[10px] text-gray-500 italic mt-4 text-center">No tienes equipamiento fabricado compatible en tu inventario.</p>;
+                    }
+
+                    return eligibleItems.map(item => (
+                      <div 
+                        key={item.id}
+                        onClick={() => {
+                          if (!item.equipped) {
+                            handleEquipItemInWorld(selectedDollSlot, item);
+                          }
+                          setSelectedDollSlot(null);
+                        }}
+                        className={`p-2.5 rounded-lg border text-xs flex justify-between items-center transition-all ${
+                          item.equipped 
+                            ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-400' 
+                            : 'bg-[#121422] border-white/5 text-gray-300 hover:border-red-900/50 hover:bg-[#1a1c2d] cursor-pointer'
+                        }`}
+                      >
+                        <div>
+                          <div className="font-bold">{item.name}</div>
+                          <div className="text-[9px] text-gray-400">{item.statBonus || 'Sin bonus'}</div>
+                        </div>
+                        {item.equipped && <span className="text-[10px] font-bold">Equipado</span>}
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
@@ -4644,7 +5356,8 @@ export function FirstPersonWorld({
                 F
               </button>
             </div>
-            <div className="flex gap-4 justify-end mt-2">
+            <div className="flex gap-4 justify-end mt-2 items-center">
+              {/* Companion Toggle Button (E) */}
               <button 
                 className="w-14 h-14 rounded-full bg-indigo-500/80 border-2 border-indigo-400 text-white font-bold text-xl shadow-xl active:scale-90 transition-transform flex items-center justify-center backdrop-blur-md"
                 onPointerDown={(e) => {
@@ -4656,21 +5369,54 @@ export function FirstPersonWorld({
               >
                 E
               </button>
-              <button 
-                className="w-14 h-14 rounded-full bg-pink-500/80 border-2 border-pink-400 text-white font-bold text-xl shadow-xl active:scale-90 transition-transform flex items-center justify-center backdrop-blur-md"
-                onPointerDown={(e) => {
+
+              {/* Special Skill Button (Q) */}
+              <div 
+                className="relative w-14 h-14 flex items-center justify-center bg-purple-900/80 border-2 border-purple-500 rounded-full cursor-pointer active:scale-90 shadow-xl transition-all select-none backdrop-blur-md text-white font-bold text-xl"
+                onTouchStart={(e) => {
                   e.preventDefault();
-                  const kbEvent = new KeyboardEvent('keydown', { key: 'v' });
-                  window.dispatchEvent(kbEvent);
-                }}
-                onPointerUp={(e) => {
-                  e.preventDefault();
-                  const kbEvent = new KeyboardEvent('keyup', { key: 'v' });
-                  window.dispatchEvent(kbEvent);
+                  if (skillCooldownLeft <= 0) {
+                    triggerSpecialSkillRef.current();
+                  }
                 }}
               >
-                V
-              </button>
+                <svg className="absolute inset-0 -rotate-90 w-full h-full">
+                  <circle
+                    cx="28"
+                    cy="28"
+                    r="23"
+                    stroke={skillCooldownLeft > 0 ? "rgba(239, 68, 68, 0.6)" : "rgba(168, 85, 247, 0.5)"}
+                    strokeWidth="3.5"
+                    fill="transparent"
+                    strokeDasharray="144.5"
+                    strokeDashoffset={skillCooldownLeft > 0 ? 144.5 * (1 - skillCooldownLeft / 8.0) : 0}
+                  />
+                </svg>
+                <span className="z-10">Q</span>
+              </div>
+
+              {/* Dodge Dash Button (V) */}
+              <div 
+                className="relative w-14 h-14 flex items-center justify-center bg-pink-600/80 border-2 border-pink-400 rounded-full cursor-pointer active:scale-90 shadow-xl transition-all select-none backdrop-blur-md text-white font-bold text-xl"
+                onTouchStart={(e) => {
+                  e.preventDefault();
+                  triggerEvadeDash();
+                }}
+              >
+                <svg className="absolute inset-0 -rotate-90 w-full h-full">
+                  <circle
+                    cx="28"
+                    cy="28"
+                    r="23"
+                    stroke={dashCooldownLeft > 0 ? "rgba(239, 68, 68, 0.6)" : "rgba(16, 185, 129, 0.5)"}
+                    strokeWidth="3.5"
+                    fill="transparent"
+                    strokeDasharray="144.5"
+                    strokeDashoffset={dashCooldownLeft > 0 ? 144.5 * (1 - dashCooldownLeft / 3.0) : 0}
+                  />
+                </svg>
+                <span className="z-10">V</span>
+              </div>
             </div>
           </div>
         </div>
