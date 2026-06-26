@@ -1099,6 +1099,9 @@ export function FirstPersonWorld({
       }).catch(err => console.error("Error updating equipment in DB:", err));
     }
 
+    triggerNotification(item ? `🛡️ Te has equipado: ${item.name}` : `🛡️ Has desequipado la ranura ${slot.toUpperCase()}`);
+  };
+
   // Calculate Weapon Mastery Multiplier (+5% per mastery level above 1)
   const getWeaponMasteryMultiplier = (wepSubType: string | undefined): number => {
     const wm = progressRef.current.weaponMastery || {};
