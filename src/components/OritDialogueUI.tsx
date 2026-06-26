@@ -245,7 +245,7 @@ function buildSanctuaryDialogue(
         {
           id: 'start',
           speaker: 'orit',
-          text: 'La Semilla Primordial en el Corazón del Árbol requiere que sintonices primero tu alma meditando en el Monolito de las Emociones y el Altar del Vínculo.',
+          text: 'El Corazón del Árbol de la Vida requiere que sintonices primero tu alma meditando en el Monolito de las Emociones y en el Altar del Vínculo.',
           isEnd: true,
         }
       ];
@@ -255,22 +255,22 @@ function buildSanctuaryDialogue(
       {
         id: 'start',
         speaker: 'orit',
-        text: 'Frente a ti está la Semilla Primordial, el origen del ciclo vital de las criaturas Nitz.',
+        text: 'Frente a ti está el Corazón del Árbol de la Vida, donde los espíritus Nitz despiertan y adoptan formas libres.',
         next: 'seed_choice',
       },
       {
         id: 'seed_choice',
         speaker: 'orit',
-        text: `Al sintonizar tus vibraciones, tu energía interior resuena con el Linaje ${lineageNames[lineage]}.\n\n¿Deseas sintonizar la Semilla para comenzar tu viaje de crianza?`,
+        text: `Siento tu vibración resonando en el corazón del bosque. El Nitz que te acompañará no posee una especie fija ni predefinida, sino que adoptará formas fluidas según tu propia senda emocional y tus cuidados.\n\n¿Estás listo para despertar a tu compañero y comenzar tu viaje?`,
         choices: [
-          { label: '🌟 Aceptar Semilla del Linaje', next: 'seed_accepted' },
+          { label: '🌟 Despertar a mi compañero Nitz', next: 'seed_accepted' },
           { label: 'Volver luego', next: 'seed_cancel' },
         ]
       },
       {
         id: 'seed_accepted',
         speaker: 'system',
-        text: `📋 PRESENTACIÓN COMPLETADA\nHas recibido el Objeto de Crianza Primordial.\nOrit regresa al plano espiritual de tu cabaña.`,
+        text: `📋 PRESENTACIÓN COMPLETADA\nHas despertado a tu compañero Nitz.\nOrit regresa al plano espiritual de tu cabaña.`,
         triggerQuestId: 'wp_complete',
         isEnd: true,
       },

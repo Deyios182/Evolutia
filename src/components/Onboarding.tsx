@@ -5,6 +5,12 @@ import { AvatarCustomization } from '../types';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 
+import bgStep0 from '../assets/media__1782497767808.jpg';
+import bgStep1 from '../assets/media__1782497767554.jpg';
+import bgStep2 from '../assets/media__1782497767781.jpg';
+import bgStep3 from '../assets/media__1782497767828.jpg';
+import charArtStep2 from '../assets/media__1782497767681.jpg';
+
 // Epic Ambient Synthesizer using Web Audio API for generative background music
 class CelestialSynth {
   private ctx: AudioContext | null = null;
@@ -110,6 +116,7 @@ interface OnboardingProps {
 export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, onLogin, initialUsername }) => {
   const [step, setStep] = useState<number>(0); // Start at step 0 for the title screen
   const [username, setUsername] = useState<string>(initialUsername || '');
+  const [nitzName, setNitzName] = useState<string>('Nitz de Origen');
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   
   // Customization presets
@@ -179,7 +186,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
         synthRef.current.stop();
       }
       onComplete(username || 'Guardián Celestial', {
-        name: username || 'Nitz de Origen',
+        name: nitzName || 'Nitz de Origen',
         accessory,
         auraType,
         colorTheme,
@@ -235,7 +242,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: "url('/assets/media__1782497767808.jpg')" }}
+              style={{ backgroundImage: `url(${bgStep0})` }}
             />
           )}
           {step === 1 && (
@@ -246,7 +253,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: "url('/assets/media__1782497767554.jpg')" }}
+              style={{ backgroundImage: `url(${bgStep1})` }}
             />
           )}
           {step === 2 && (
@@ -257,7 +264,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: "url('/assets/media__1782497767781.jpg')" }}
+              style={{ backgroundImage: `url(${bgStep2})` }}
             />
           )}
           {step === 3 && (
@@ -268,7 +275,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: "url('/assets/media__1782497767828.jpg')" }}
+              style={{ backgroundImage: `url(${bgStep3})` }}
             />
           )}
         </AnimatePresence>
@@ -325,7 +332,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               {/* Cover Artwork */}
               <div className="relative w-full max-w-xl aspect-video rounded-xl overflow-hidden border border-cyan-500/20 shadow-[0_0_40px_rgba(6,182,212,0.1)] bg-slate-950">
                 <img 
-                  src="/assets/media__1782497767808.jpg" 
+                  src={bgStep0} 
                   alt="Evolutia Logo Cover" 
                   className="w-full h-full object-cover opacity-90 scale-100 hover:scale-103 transition-transform duration-700"
                 />
@@ -429,7 +436,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                   {/* Anime Character Artwork integration */}
                   <div className="w-full h-36 rounded-xl overflow-hidden border border-indigo-500/20 shadow-lg relative bg-slate-950">
                     <img 
-                      src="/assets/media__1782497767681.jpg" 
+                      src={charArtStep2} 
                       alt="Guardián Místico" 
                       className="w-full h-full object-cover opacity-85 hover:scale-103 transition-transform duration-500"
                     />
@@ -571,36 +578,23 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
 
                       {/* Fluffy wiggle animation center */}
                       <div className="w-16 h-16 rounded-full bg-white/10 backdrop-blur-md border border-white/25 flex flex-col justify-center items-center font-mono font-black text-xs text-glow-silver tracking-tight">
-                        <span className="animate-pulse">{username.slice(0, 8) || 'Nitz'}</span>
+                        <span className="animate-pulse">{nitzName.slice(0, 8) || 'Nitz'}</span>
                         <span className="text-[9px] text-gray-400 font-normal">PH 1</span>
                       </div>
                     </div>
                   </div>
 
-                  {/* Crying elf dissolving decorative artwork card */}
-                  <div className="mt-4 flex gap-3 items-center p-3 bg-black/40 border border-white/5 rounded-xl">
-                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-[#dec1ac]/20 flex-shrink-0 bg-slate-950">
-                      <img 
-                        src="/assets/media__1782497767828.jpg" 
-                        alt="Resonancia Mística" 
-                        className="w-full h-full object-cover"
-                      />
-                    </div>
-                    <div className="flex-1">
-                      <span className="text-[8px] font-mono text-tertiary block font-bold uppercase tracking-wide">Fusión Estelar Directa</span>
-                      <p className="text-[9px] text-gray-400 leading-tight">Tu esencia se sincroniza en el núcleo del Gran Árbol, materializando al primer Nitz.</p>
-                    </div>
-                  </div>
+                  {/* El Nitz adopta forma libre y no tiene especie fija */}
 
                   <div className="z-10 text-center space-y-1 mt-4">
                     <input 
                       type="text" 
-                      value={username} 
-                      onChange={(e) => setUsername(e.target.value.slice(0, 24))}
-                      placeholder="Nombra tu Avatar..."
+                      value={nitzName} 
+                      onChange={(e) => setNitzName(e.target.value.slice(0, 24))}
+                      placeholder="Nombra a tu compañero Nitz..."
                       className="w-full text-center bg-black/40 border border-white/10 rounded-lg p-2 text-white text-xs placeholder-gray-500 outline-none focus:border-[#dec1ac] font-bold"
                     />
-                    <p className="text-[10px] text-gray-400">Personaliza libremente el nombre místico.</p>
+                    <p className="text-[10px] text-gray-400">Personaliza libremente el nombre de tu compañero Nitz.</p>
                   </div>
                 </div>
 
@@ -697,7 +691,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                   <div className="flex gap-3 pt-4 border-t border-white/5">
                     <button
                       onClick={handleNextStep}
-                      disabled={!username.trim()}
+                      disabled={!nitzName.trim()}
                       className="flex-1 py-3.5 bg-gradient-to-r from-[#dec1ac] to-[#ceaa92] text-black disabled:opacity-40 font-extrabold rounded-xl transition active:scale-95 text-center flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <span>Despertar en la Aldea Nitz</span>
