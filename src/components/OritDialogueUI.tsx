@@ -23,6 +23,7 @@ interface OritDialogueUIProps {
   onSaveProgress: (p: PlayerProgress) => void;
   onClose: (action?: 'open_cabin_system') => void;
   dominantEmotion: EmotionName;
+  interactingNodeId?: string;
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -153,7 +154,8 @@ function buildReturnDialogue(progress: PlayerProgress, dominantEmotion: EmotionN
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Helpers for cabin state
+// ─────────────────────────────────────────────────────────────────
+// Helpers for cabin state and world presentation
 // ─────────────────────────────────────────────────────────────────
 function getOrInitCabin(progress: PlayerProgress): CabinState {
   return progress.cabin ?? {
@@ -166,16 +168,185 @@ function getOrInitCabin(progress: PlayerProgress): CabinState {
   };
 }
 
+export function determinePrimordialLineage(emotions: EmotionVector): 'solar' | 'abisal' | 'primordial' {
+  const solarScore = (emotions.Alegría || 0) + (emotions.Orgullo || 0) + (emotions.Ira || 0);
+  const abisalScore = (emotions.Tristeza || 0) + (emotions.Miedo || 0) + (emotions.Serenidad || 0);
+  const primordialScore = (emotions.Amor || 0) + (emotions.Confianza || 0) + (emotions.Sorpresa || 0);
+
+  if (solarScore >= abisalScore && solarScore >= primordialScore) {
+    return 'solar';
+  } else if (abisalScore >= solarScore && abisalScore >= primordialScore) {
+    return 'abisal';
+  } else {
+    return 'primordial';
+  }
+}
+
+function buildSanctuaryDialogue(
+  progress: PlayerProgress,
+  dominantEmotion: EmotionName,
+  interactingNodeId?: string
+): DialogueNode[] {
+  const wp = progress.worldPresentation || {
+    active: true,
+    currentStep: 'intro',
+    oritAsCompanion: true,
+    completed: false,
+    visitedEmotionsMonolith: false,
+    visitedBondMonolith: false,
+  };
+
+  const lineage = determinePrimordialLineage(progress.emotions);
+  const lineageNames = {
+    solar: 'Solar ☀️ (Semilla del Solsticio)',
+    abisal: 'Abisal 🔮 (Cristal del Vacío)',
+    primordial: 'Ancestral 🌱 (Brote del Árbol de la Vida)',
+  };
+
+  if (interactingNodeId === 'shrine_emotions') {
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Este es el Monolito de las Emociones Primordiales. En Evolutia, tus sentimientos se transmiten a tu criatura en tiempo real.',
+        next: 'emotions_desc_2',
+      },
+      {
+        id: 'emotions_desc_2',
+        speaker: 'orit',
+        text: 'Nueve emociones primarias le dan forma. Con el tiempo, sintonizarlas te permitirá desbloquear arquetipos únicos en el Códice.',
+        triggerQuestId: 'wp_read_emotions',
+        isEnd: true,
+      }
+    ];
+  }
+
+  if (interactingNodeId === 'shrine_bond') {
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Contempla el Altar del Vínculo Estelar. Las criaturas Nitz no se controlan con la fuerza, sino con la empatía.',
+        next: 'bond_desc_2',
+      },
+      {
+        id: 'bond_desc_2',
+        speaker: 'orit',
+        text: 'Alimentar, acariciar y hablar con tu compañero aumentará su nivel de vinculación, permitiéndole asistir en combate con habilidades especiales.',
+        triggerQuestId: 'wp_read_bond',
+        isEnd: true,
+      }
+    ];
+  }
+
+  if (interactingNodeId === 'great_seed') {
+    if (wp.currentStep !== 'monoliths_read') {
+      return [
+        {
+          id: 'start',
+          speaker: 'orit',
+          text: 'La Semilla Primordial en el Corazón del Árbol requiere que sintonices primero tu alma meditando en el Monolito de las Emociones y el Altar del Vínculo.',
+          isEnd: true,
+        }
+      ];
+    }
+
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Frente a ti está la Semilla Primordial, el origen del ciclo vital de las criaturas Nitz.',
+        next: 'seed_choice',
+      },
+      {
+        id: 'seed_choice',
+        speaker: 'orit',
+        text: `Al sintonizar tus vibraciones, tu energía interior resuena con el Linaje ${lineageNames[lineage]}.\n\n¿Deseas sintonizar la Semilla para comenzar tu viaje de crianza?`,
+        choices: [
+          { label: '🌟 Aceptar Semilla del Linaje', next: 'seed_accepted' },
+          { label: 'Volver luego', next: 'seed_cancel' },
+        ]
+      },
+      {
+        id: 'seed_accepted',
+        speaker: 'system',
+        text: `📋 PRESENTACIÓN COMPLETADA\nHas recibido el Objeto de Crianza Primordial.\nOrit regresa al plano espiritual de tu cabaña.`,
+        triggerQuestId: 'wp_complete',
+        isEnd: true,
+      },
+      {
+        id: 'seed_cancel',
+        speaker: 'orit',
+        text: 'Tómate tu tiempo. El Corazón del Árbol esperará a que estés listo.',
+        isEnd: true,
+      }
+    ];
+  }
+
+  // General talking directly with Orit in Sanctuary
+  if (wp.currentStep === 'intro') {
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Despierta, Guardián... estás en el Santuario del Gran Árbol de la Vida.',
+        next: 'intro_2',
+      },
+      {
+        id: 'intro_2',
+        speaker: 'orit',
+        text: 'Soy Orit, tu guía estelar. Acompáñame a sintonizar la esencia mística de este lugar. Debes examinar el Monolito de las Emociones y el Altar del Vínculo.',
+        triggerQuestId: 'wp_intro_done',
+        isEnd: true,
+      }
+    ];
+  }
+
+  if (wp.currentStep === 'exploration') {
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Recuerda: examina el Monolito de las Emociones (izquierda) y el Altar del Vínculo (derecha) para sintonizar tu alma.',
+        isEnd: true,
+      }
+    ];
+  }
+
+  if (wp.currentStep === 'monoliths_read') {
+    return [
+      {
+        id: 'start',
+        speaker: 'orit',
+        text: 'Has sintonizado con los altares. Ahora podemos acercarnos al Corazón del Árbol de la Vida en el extremo norte.',
+        isEnd: true,
+      }
+    ];
+  }
+
+  return [
+    {
+      id: 'start',
+      speaker: 'orit',
+      text: 'Tu linaje primordial ha despertado. El portal de salida hacia el exterior está habilitado. ¡Buena suerte, Guardián!',
+      isEnd: true,
+    }
+  ];
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Main component
 // ─────────────────────────────────────────────────────────────────
-export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmotion }: OritDialogueUIProps) {
+export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmotion, interactingNodeId }: OritDialogueUIProps) {
   const isFirstMeet = !progress.cabin?.oritMet;
   const nitzName = progress.avatar.name || 'Nitz';
 
-  const dialogueTree: DialogueNode[] = isFirstMeet
-    ? buildFirstMeetDialogue(dominantEmotion, nitzName)
-    : buildReturnDialogue(progress, dominantEmotion);
+  const isSanctuary = progress.worldPresentation?.active;
+  const dialogueTree: DialogueNode[] = isSanctuary
+    ? buildSanctuaryDialogue(progress, dominantEmotion, interactingNodeId)
+    : (isFirstMeet
+        ? buildFirstMeetDialogue(dominantEmotion, nitzName)
+        : buildReturnDialogue(progress, dominantEmotion));
 
   const [currentNodeId, setCurrentNodeId] = useState<string>(dialogueTree[0]?.id || 'start');
   const [displayedText, setDisplayedText] = useState('');
@@ -185,6 +356,12 @@ export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmot
   const typeIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const currentNode = dialogueTree.find(n => n.id === currentNodeId) ?? dialogueTree[0];
+
+  useEffect(() => {
+    if (dialogueTree[0]) {
+      setCurrentNodeId(dialogueTree[0].id);
+    }
+  }, [interactingNodeId, dialogueTree]);
 
   // Fade in on mount
   useEffect(() => {
@@ -254,7 +431,76 @@ export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmot
     setCurrentNodeId(nextId);
   };
 
+  const handleWPAction = (actionId: string) => {
+    const wp = progress.worldPresentation || {
+      active: true,
+      currentStep: 'intro',
+      oritAsCompanion: true,
+      completed: false,
+      visitedEmotionsMonolith: false,
+      visitedBondMonolith: false,
+    };
+
+    const nextWP = { ...wp };
+    const nextProgUpdates: Partial<PlayerProgress> = {};
+
+    if (actionId === 'wp_intro_done') {
+      nextWP.currentStep = 'exploration';
+    } else if (actionId === 'wp_read_emotions') {
+      nextWP.visitedEmotionsMonolith = true;
+      if (nextWP.visitedBondMonolith) {
+        nextWP.currentStep = 'monoliths_read';
+      }
+    } else if (actionId === 'wp_read_bond') {
+      nextWP.visitedBondMonolith = true;
+      if (nextWP.visitedEmotionsMonolith) {
+        nextWP.currentStep = 'monoliths_read';
+      }
+    } else if (actionId === 'wp_complete') {
+      const lineage = determinePrimordialLineage(progress.emotions);
+      const objectType = 
+        lineage === 'solar' ? 'seed_solar' : 
+        lineage === 'abisal' ? 'core_abisal' : 
+        'sprout_ancestral';
+
+      nextWP.active = false;
+      nextWP.oritAsCompanion = false;
+      nextWP.completed = true;
+      nextWP.currentStep = 'completed';
+      nextWP.linajeDetermined = lineage;
+
+      nextProgUpdates.pendingCompanionSeed = {
+        type: objectType,
+        lineage: lineage,
+        experience: 0,
+        stage: 1,
+      };
+      nextProgUpdates.companionSummoned = false;
+    }
+
+    const updatedProg: PlayerProgress = {
+      ...progress,
+      ...nextProgUpdates,
+      worldPresentation: nextWP,
+    };
+
+    onSaveProgress(updatedProg);
+
+    if (auth.currentUser) {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      updateDoc(userRef, {
+        worldPresentation: nextWP,
+        ...nextProgUpdates,
+      }).catch(err => console.error('Error updating WP state in DB:', err));
+    }
+  };
+
   const activateQuest = (questId: string) => {
+    if (questId.startsWith('wp_')) {
+      handleWPAction(questId);
+      return;
+    }
+
     const questTemplate = ORIT_QUESTS[questId];
     if (!questTemplate) return;
 

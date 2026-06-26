@@ -115,6 +115,16 @@ export interface CabinState {
   customPositions?: Record<string, { x: number; z: number; rotation: number }>;
 }
 
+export interface WorldPresentationState {
+  active: boolean;                  // ¿Está la fase de presentación activa?
+  currentStep: 'intro' | 'exploration' | 'monoliths_read' | 'completed';
+  oritAsCompanion: boolean;         // Si Orit sigue al jugador como Nitz temporal
+  completed: boolean;               // Si se ha completado la fase inicial
+  visitedEmotionsMonolith: boolean; // Registro de haber leído el Monolito de Emociones
+  visitedBondMonolith: boolean;     // Registro de haber leído el Altar del Vínculo
+  linajeDetermined?: 'solar' | 'abisal' | 'primordial';
+}
+
 export interface PlayerProgress {
   isLoggedIn: boolean;
   username: string;
@@ -167,6 +177,14 @@ export interface PlayerProgress {
   dominantEmotion?: string;
   // Flag to prevent re-injecting the dev test kit
   devKitInjected?: boolean;
+  // World Presentation System
+  worldPresentation?: WorldPresentationState;
+  pendingCompanionSeed?: {
+    type: 'seed_solar' | 'core_abisal' | 'sprout_ancestral';
+    lineage: 'solar' | 'abisal' | 'primordial';
+    experience: number;
+    stage: number; // 1 = semilla/huevo, 2 = brote/incubando, 3 = listo para eclosionar
+  } | null;
 }
 
 export interface MarketplaceItem {

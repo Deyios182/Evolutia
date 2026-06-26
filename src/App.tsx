@@ -15,7 +15,7 @@ import {
   Hammer,
   Users
 } from 'lucide-react';
-import { GameView, EmotionVector, PlayerProgress, AvatarCustomization, GatheringInventory, CraftableItem, CabinState } from './types';
+import { GameView, EmotionVector, PlayerProgress, AvatarCustomization, GatheringInventory, CraftableItem, CabinState, WorldPresentationState } from './types';
 import { Onboarding } from './components/Onboarding';
 import { MyHome } from './components/MyHome';
 import { Lobby } from './components/Lobby';
@@ -59,6 +59,15 @@ const DEFAULT_CABIN: CabinState = {
   oritDialogueIndex: 0,
 };
 
+const DEFAULT_PRESENTATION: WorldPresentationState = {
+  active: true,
+  currentStep: 'intro',
+  oritAsCompanion: true,
+  completed: false,
+  visitedEmotionsMonolith: false,
+  visitedBondMonolith: false,
+};
+
 const DEFAULT_PROGRESS: PlayerProgress = {
   isLoggedIn: false,
   username: '',
@@ -91,6 +100,8 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   authorizedBuilders: [],
   cabin: DEFAULT_CABIN,
   devKitInjected: false,
+  worldPresentation: DEFAULT_PRESENTATION,
+  pendingCompanionSeed: null,
 };
 
 export default function App() {
@@ -130,6 +141,13 @@ export default function App() {
                 ...DEFAULT_CABIN,
                 ...(cloudData.cabin || {}),
               },
+              worldPresentation: {
+                ...DEFAULT_PRESENTATION,
+                ...(cloudData.worldPresentation || {}),
+              },
+              pendingCompanionSeed: cloudData.pendingCompanionSeed !== undefined 
+                ? cloudData.pendingCompanionSeed 
+                : DEFAULT_PROGRESS.pendingCompanionSeed,
               isLoggedIn: true,
               username: cloudData.username || user.displayName || 'Guardián Místico',
               avatarUrl: user.photoURL || '',
@@ -195,6 +213,13 @@ export default function App() {
                 ...DEFAULT_CABIN,
                 ...(parsed.cabin || {}),
               },
+              worldPresentation: {
+                ...DEFAULT_PRESENTATION,
+                ...(parsed.worldPresentation || {}),
+              },
+              pendingCompanionSeed: parsed.pendingCompanionSeed !== undefined 
+                ? parsed.pendingCompanionSeed 
+                : DEFAULT_PROGRESS.pendingCompanionSeed,
               craftedItems: parsed.craftedItems || DEFAULT_PROGRESS.craftedItems,
               houseDecorations: parsed.houseDecorations || DEFAULT_PROGRESS.houseDecorations,
               plotLevel: parsed.plotLevel ?? DEFAULT_PROGRESS.plotLevel,

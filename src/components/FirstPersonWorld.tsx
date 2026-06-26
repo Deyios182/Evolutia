@@ -53,8 +53,10 @@ function createDetailedNitzMesh(
   const group = new THREE.Group();
 
   // Resolve color
+  const isOrit = avatar.name === 'Orit';
   let nColor = EMOTION_COLORS[dominantEmotion] || 0xfdcc15;
-  if (avatar.colorTheme === 'abyssal') nColor = 0x8b5cf6;
+  if (isOrit) nColor = 0xffea70; // Dorado primordial
+  else if (avatar.colorTheme === 'abyssal') nColor = 0x8b5cf6;
   else if (avatar.colorTheme === 'solstice') nColor = 0xf59e0b;
   else if (avatar.colorTheme === 'primeval') nColor = 0xef4444;
 
@@ -62,11 +64,14 @@ function createDetailedNitzMesh(
   const hasMetallic = avatar.traits?.includes('Escamas Metálicas');
   const bodyGeometry = new THREE.SphereGeometry(1.2, 24, 24);
   const bodyMaterial = new THREE.MeshPhongMaterial({
-    color: 0xf5f8ff,
-    emissive: 0x111422,
-    shininess: hasMetallic ? 150 : 90,
+    color: isOrit ? 0xffea70 : 0xf5f8ff,
+    emissive: isOrit ? 0xff9900 : 0x111422,
+    emissiveIntensity: isOrit ? 0.95 : 0.2,
+    transparent: isOrit,
+    opacity: isOrit ? 0.85 : 1.0,
+    shininess: isOrit ? 150 : (hasMetallic ? 150 : 90),
   });
-  if (hasMetallic) {
+  if (hasMetallic && !isOrit) {
     (bodyMaterial as any).metalness = 0.9;
     (bodyMaterial as any).roughness = 0.1;
   }
@@ -91,10 +96,10 @@ function createDetailedNitzMesh(
   eyesGroup.add(leftEyeSocket, rightEyeSocket);
 
   // Pupils (dynamically colored by emotion/theme)
-  const hasGlowingEyes = avatar.traits?.includes('Ojos Rutilantes');
+  const hasGlowingEyes = isOrit || avatar.traits?.includes('Ojos Rutilantes');
   const pupilGeo = new THREE.SphereGeometry(0.08, 12, 12);
   const pupilMat = hasGlowingEyes 
-    ? new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1 })
+    ? new THREE.MeshPhongMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.2 })
     : new THREE.MeshBasicMaterial({ color: nColor });
   const leftPupil = new THREE.Mesh(pupilGeo, pupilMat);
   leftPupil.position.set(-0.45, 0, 0.18);
@@ -115,29 +120,31 @@ function createDetailedNitzMesh(
 
   // 3. Dynamic Tail
   const tailGroup = new THREE.Group();
-  tailGroup.position.set(0, -0.6, -1.0);
-  group.add(tailGroup);
+  if (!isOrit) {
+    tailGroup.position.set(0, -0.6, -1.0);
+    group.add(tailGroup);
 
-  const segmentCount = 6;
-  const segmentRadius = 0.18;
-  let currentParent: THREE.Object3D = tailGroup;
-  for (let i = 0; i < segmentCount; i++) {
-    const sizeScale = 1.0 - (i / segmentCount) * 0.5;
-    const length = 0.35;
-    const tailSegGeo = new THREE.ConeGeometry(segmentRadius * sizeScale, length, 12);
-    const tailSegMat = new THREE.MeshPhongMaterial({
-      color: 0xf5f8ff,
-      shininess: 60,
-    });
-    const tailSeg = new THREE.Mesh(tailSegGeo, tailSegMat);
-    tailSeg.rotation.x = -Math.PI / 2;
-    tailSeg.position.set(0, 0, -length * 0.6);
+    const segmentCount = 6;
+    const segmentRadius = 0.18;
+    let currentParent: THREE.Object3D = tailGroup;
+    for (let i = 0; i < segmentCount; i++) {
+      const sizeScale = 1.0 - (i / segmentCount) * 0.5;
+      const length = 0.35;
+      const tailSegGeo = new THREE.ConeGeometry(segmentRadius * sizeScale, length, 12);
+      const tailSegMat = new THREE.MeshPhongMaterial({
+        color: 0xf5f8ff,
+        shininess: 60,
+      });
+      const tailSeg = new THREE.Mesh(tailSegGeo, tailSegMat);
+      tailSeg.rotation.x = -Math.PI / 2;
+      tailSeg.position.set(0, 0, -length * 0.6);
 
-    const joint = new THREE.Group();
-    joint.position.set(0, 0, i === 0 ? 0 : -length * 0.9);
-    joint.add(tailSeg);
-    currentParent.add(joint);
-    currentParent = joint;
+      const joint = new THREE.Group();
+      joint.position.set(0, 0, i === 0 ? 0 : -length * 0.9);
+      joint.add(tailSeg);
+      currentParent.add(joint);
+      currentParent = joint;
+    }
   }
 
   // 4. Ears (Phase 2+)
@@ -164,7 +171,7 @@ function createDetailedNitzMesh(
   const rightEarInner = new THREE.Mesh(new THREE.ConeGeometry(0.18, 0.9, 12).translate(0, 0.45, 0.05), earInnerMat);
   rightEarJoint.add(rightEar, rightEarInner);
 
-  if (phase < 2) {
+  if (phase < 2 || isOrit) {
     leftEarJoint.visible = false;
     rightEarJoint.visible = false;
   }
@@ -426,7 +433,31 @@ function createProceduralFloorTexture(mapType: FPMapType): THREE.Texture {
   canvas.height = 512;
   const ctx = canvas.getContext('2d')!;
 
-  if (mapType === 'cabin') {
+  if (mapType === 'sanctuary') {
+    // Serene emerald moss floor with concentric golden energy rings/lines
+    ctx.fillStyle = '#062611';
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Draw gold patterns / tree rings
+    ctx.strokeStyle = '#d4af37';
+    ctx.lineWidth = 4;
+    for (let r = 60; r < 512; r += 90) {
+      ctx.beginPath();
+      ctx.arc(256, 256, r, 0, Math.PI * 2);
+      ctx.stroke();
+    }
+
+    // Add organic moss patches
+    for (let i = 0; i < 40; i++) {
+      ctx.fillStyle = i % 2 === 0 ? '#0b3d1b' : '#041c0c';
+      const x = Math.random() * 512;
+      const y = Math.random() * 512;
+      const r = 15 + Math.random() * 25;
+      ctx.beginPath();
+      ctx.arc(x, y, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  } else if (mapType === 'cabin') {
     // Wood floor planks
     ctx.fillStyle = '#1e1610';
     ctx.fillRect(0, 0, 512, 512);
@@ -704,7 +735,12 @@ function createProceduralSkyTexture(mapType: FPMapType): THREE.Texture {
 
   const gradient = ctx.createLinearGradient(0, 0, 0, 512);
 
-  if (mapType === 'cabin') {
+  if (mapType === 'sanctuary') {
+    // Golden rays and deep moss green sky
+    gradient.addColorStop(0, '#041407');
+    gradient.addColorStop(0.5, '#0b3012');
+    gradient.addColorStop(1, '#22521c');
+  } else if (mapType === 'cabin') {
     // Warm interior ceiling glow
     gradient.addColorStop(0, '#2e1910');
     gradient.addColorStop(1, '#0c0705');
@@ -909,7 +945,7 @@ interface FirstPersonWorldProps {
   onSpendGold: (amount: number, expGained: number) => boolean;
 }
 
-export type FPMapType = 'cabin' | 'neighborhood' | 'lobby' | 'map1' | 'map2' | 'map3';
+export type FPMapType = 'cabin' | 'neighborhood' | 'lobby' | 'map1' | 'map2' | 'map3' | 'sanctuary';
 
 interface OnlinePlayer {
   id: string;
@@ -989,9 +1025,19 @@ export function FirstPersonWorld({
   onSpendGold
 }: FirstPersonWorldProps) {
   // Navigation states
-  const [currentMap, setCurrentMap] = useState<FPMapType>('cabin');
+  const [currentMap, setCurrentMap] = useState<FPMapType>(() => {
+    if (progress.worldPresentation && !progress.worldPresentation.completed) {
+      return 'sanctuary';
+    }
+    return 'cabin';
+  });
   const [playerX, setPlayerX] = useState<number>(0);
-  const [playerZ, setPlayerZ] = useState<number>(5);
+  const [playerZ, setPlayerZ] = useState<number>(() => {
+    if (progress.worldPresentation && !progress.worldPresentation.completed) {
+      return 15;
+    }
+    return 5;
+  });
   const [mapTransitioning, setMapTransitioning] = useState<boolean>(false);
   const prevMapRef = useRef<FPMapType>('cabin');
 
@@ -1010,6 +1056,7 @@ export function FirstPersonWorld({
   // Active overlay modal state
   type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory' | 'orit_dialogue' | 'cabin_system';
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
+  const [activeDialogueNodeId, setActiveDialogueNodeId] = useState<string | undefined>(undefined);
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
 
   // Refs for tracking attack cooldown and spatial proximity sound oscillators
@@ -1092,7 +1139,7 @@ export function FirstPersonWorld({
 
   // Coordinate & Camera Refs for frame-rate independent physics
   const playerXRef = useRef<number>(0);
-  const playerZRef = useRef<number>(5);
+  const playerZRef = useRef<number>(progress.worldPresentation && !progress.worldPresentation.completed ? 15 : 5);
   const cameraAngleRef = useRef<number>(0);
   const cameraPitchRef = useRef<number>(0);
   const onlinePlayersRef = useRef<OnlinePlayer[]>([]);
@@ -1988,7 +2035,18 @@ export function FirstPersonWorld({
     const prevMap = prevMapRef.current;
     prevMapRef.current = currentMap;
 
-    if (currentMap === 'cabin') {
+    if (currentMap === 'sanctuary') {
+      newNodes = [
+        { id: 'sanctuary_exit', name: 'Puerta del Gran Árbol (Salida)', x: 0, z: 20, type: 'door_lobby', label: '🚪 Cruzar el umbral hacia el Lobby' },
+        { id: 'shrine_emotions', name: 'Monolito de las Emociones', x: -10, z: -10, type: 'bookshelf', label: '✨ Meditar sobre el Sentimiento Primordial' },
+        { id: 'shrine_bond', name: 'Altar del Vínculo Estelar', x: 10, z: -10, type: 'anvil', label: '🌟 Sintonizar la Alianza con tu Nitz' },
+        { id: 'great_seed', name: 'Corazón del Árbol de la Vida', x: 0, z: -20, type: 'synth', label: '🌱 Observar la Semilla Primordial' },
+      ];
+      setPlayerX(0);
+      setPlayerZ(15);
+      playerXRef.current = 0;
+      playerZRef.current = 15;
+    } else if (currentMap === 'cabin') {
       newNodes = [
         // Orit NPC — always present in cabin
         { id: 'orit_mentor', name: 'Orit — El Nitz Mentor', x: -3, z: -2, type: 'orit_npc', label: '🌟 Hablar con Orit' },
@@ -2455,7 +2513,10 @@ export function FirstPersonWorld({
     sceneRef.current = scene;
 
     // Atmospheric Fog depending on current zone
-    if (currentMap === 'cabin') {
+    if (currentMap === 'sanctuary') {
+      scene.background = new THREE.Color(0x0a1c0e); // Deep moss/nature theme
+      scene.fog = new THREE.FogExp2(0x0a1c0e, 0.04);
+    } else if (currentMap === 'cabin') {
       scene.background = new THREE.Color(0x050608); // Pitch black/tactical
       scene.fog = new THREE.FogExp2(0x050608, 0.08);
     } else if (currentMap === 'neighborhood') {
@@ -2491,7 +2552,10 @@ export function FirstPersonWorld({
     // Create Floor Grid and Landscape representation
     let floorSize = 80;
     let gridDivisions = 40;
-    if (currentMap === 'lobby' || currentMap === 'neighborhood') {
+    if (currentMap === 'sanctuary') {
+      floorSize = 80;
+      gridDivisions = 40;
+    } else if (currentMap === 'lobby' || currentMap === 'neighborhood') {
       floorSize = 160;
       gridDivisions = 80;
     } else if (currentMap === 'map1' || currentMap === 'map2' || currentMap === 'map3') {
@@ -3030,7 +3094,22 @@ export function FirstPersonWorld({
     // In other maps: only when companionSummoned === true
     let companionMesh: THREE.Group | THREE.Mesh | null = null;
     let companionRing: THREE.Mesh | null = null;
-    if (currentMap === 'cabin') {
+    const isOritCompanion = progress.worldPresentation?.active && progress.worldPresentation?.oritAsCompanion;
+
+    if (isOritCompanion) {
+      const oritAvatar: AvatarCustomization = {
+        name: 'Orit',
+        accessory: 'halo',
+        auraType: 'sparkles',
+        colorTheme: 'solstice',
+        clothing: 'none',
+        traits: ['Ojos Rutilantes'],
+      };
+      companionMesh = createDetailedNitzMesh(oritAvatar, 'Alegría', 3, 0.45);
+      companionMesh.position.set(playerX + 1.2, 1.2, playerZ - 1.2);
+      scene.add(companionMesh);
+      companionMeshRef.current = companionMesh;
+    } else if (currentMap === 'cabin') {
       // Always show player Nitz in cabin
       companionMesh = createDetailedNitzMesh(
         progress.avatar,
@@ -4885,6 +4964,15 @@ export function FirstPersonWorld({
       osc.stop(audioCtx.currentTime + 0.12);
     } catch (_) {}
 
+    // Sanctuary Node Interceptor
+    if (currentMap === 'sanctuary') {
+      if (nearNode.id === 'shrine_emotions' || nearNode.id === 'shrine_bond' || nearNode.id === 'great_seed') {
+        setActiveDialogueNodeId(nearNode.id);
+        setActiveOverlay('orit_dialogue');
+        return;
+      }
+    }
+
     // Router
     if (nearNode.type === 'synth') {
       setActiveOverlay('syntonia');
@@ -4912,6 +5000,7 @@ export function FirstPersonWorld({
     } else if (nearNode.type === 'nitz_npc') {
       setActiveOverlay('interactive_pet_chat');
     } else if (nearNode.type === 'orit_npc') {
+      setActiveDialogueNodeId(undefined);
       setActiveOverlay('orit_dialogue');
     } else if (nearNode.type === 'house_plot') {
       // Praise neighbor houseplot
@@ -4934,6 +5023,10 @@ export function FirstPersonWorld({
       changeMap('cabin');
       triggerNotification("🏠 Entrando a tu Cabaña de Origen...");
     } else if (nearNode.type === 'door_lobby') {
+      if (progress.worldPresentation?.active && !progress.worldPresentation?.completed) {
+        triggerNotification("🔮 Orit: Aún debemos sintonizar tu alma con la Semilla antes de cruzar al exterior.");
+        return;
+      }
       changeMap('lobby');
       triggerNotification("💎 Entrando a la Gran Plaza Central del Lobby");
     } else if (nearNode.type === 'door_map1') {
@@ -5463,15 +5556,21 @@ export function FirstPersonWorld({
   const distanceToBeacon = currentMap === 'map3' ? Math.sqrt(Math.pow(playerX - extractionXRef.current, 2) + Math.pow(playerZ - extractionZRef.current, 2)) : 999;
   const isNearBeacon = distanceToBeacon <= 5.0;
 
-  // Auto-open Orit dialogue on first cabin entry
+  // Auto-open Orit dialogue on first cabin or sanctuary entry
   useEffect(() => {
-    if (currentMap === 'cabin' && !progress.cabin?.oritMet) {
+    if (currentMap === 'sanctuary' && progress.worldPresentation?.active && progress.worldPresentation?.currentStep === 'intro') {
+      const timer = setTimeout(() => {
+        setActiveDialogueNodeId(undefined);
+        setActiveOverlay('orit_dialogue');
+      }, 1500);
+      return () => clearTimeout(timer);
+    } else if (currentMap === 'cabin' && !progress.cabin?.oritMet) {
       const timer = setTimeout(() => {
         setActiveOverlay('orit_dialogue');
       }, 1500);
       return () => clearTimeout(timer);
     }
-  }, [currentMap, progress.cabin?.oritMet]);
+  }, [currentMap, progress.cabin?.oritMet, progress.worldPresentation?.active, progress.worldPresentation?.currentStep]);
 
   return (
     <div className="w-full relative bg-[#090a14] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" style={{ height: '780px' }}>
@@ -6148,6 +6247,7 @@ export function FirstPersonWorld({
                         }
                       }}
                       dominantEmotion={currentDominant.name}
+                      interactingNodeId={activeDialogueNodeId}
                     />
                   )}
 
