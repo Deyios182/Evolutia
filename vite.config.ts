@@ -18,15 +18,28 @@ try {
   if (fs.existsSync(artifactDir)) {
     const files = fs.readdirSync(artifactDir);
     fs.appendFileSync(logFile, `Files in artifactDir: ${files.join(', ')}\n`);
+    const publicAssetsDir = path.resolve(__dirname, 'public', 'assets');
+    if (!fs.existsSync(publicAssetsDir)) {
+      fs.mkdirSync(publicAssetsDir, { recursive: true });
+      fs.appendFileSync(logFile, `Created publicAssetsDir: ${publicAssetsDir}\n`);
+    }
+
     files.forEach(file => {
       if (file.startsWith('media__1782497767') && file.endsWith('.jpg')) {
         const srcPath = path.join(artifactDir, file);
+        
+        // Copy to src/assets
         const destPath = path.join(destDir, file);
         fs.copyFileSync(srcPath, destPath);
-        fs.appendFileSync(logFile, `Copied ${file} to ${destPath}\n`);
+        
+        // Copy to public/assets
+        const pubPath = path.join(publicAssetsDir, file);
+        fs.copyFileSync(srcPath, pubPath);
+        
+        fs.appendFileSync(logFile, `Copied ${file} to ${destPath} and ${pubPath}\n`);
       }
     });
-    console.log('✅ Recursos multimedia copiados a src/assets.');
+    console.log('✅ Recursos multimedia copiados a src/assets y public/assets.');
   }
 } catch (e: any) {
   console.warn('Error copiando recursos en vite.config.ts:', e);

@@ -5,12 +5,6 @@ import { AvatarCustomization } from '../types';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
 
-import bgStep0 from '../assets/media__1782497767808.jpg';
-import bgStep1 from '../assets/media__1782497767554.jpg';
-import bgStep2 from '../assets/media__1782497767781.jpg';
-import bgStep3 from '../assets/media__1782497767828.jpg';
-import charArtStep2 from '../assets/media__1782497767681.jpg';
-
 // Epic Ambient Synthesizer using Web Audio API for generative background music
 class CelestialSynth {
   private ctx: AudioContext | null = null;
@@ -242,7 +236,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${bgStep0})` }}
+              style={{ backgroundImage: "url('/assets/media__1782497767808.jpg')" }}
             />
           )}
           {step === 1 && (
@@ -253,7 +247,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${bgStep1})` }}
+              style={{ backgroundImage: "url('/assets/media__1782497767554.jpg')" }}
             />
           )}
           {step === 2 && (
@@ -264,7 +258,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${bgStep2})` }}
+              style={{ backgroundImage: "url('/assets/media__1782497767781.jpg')" }}
             />
           )}
           {step === 3 && (
@@ -275,7 +269,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               exit={{ opacity: 0 }}
               transition={{ duration: 1.0 }}
               className="absolute inset-0 bg-cover bg-center"
-              style={{ backgroundImage: `url(${bgStep3})` }}
+              style={{ backgroundImage: "url('/assets/media__1782497767828.jpg')" }}
             />
           )}
         </AnimatePresence>
@@ -332,7 +326,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
               {/* Cover Artwork */}
               <div className="relative w-full max-w-xl aspect-video rounded-xl overflow-hidden border border-cyan-500/20 shadow-[0_0_40px_rgba(6,182,212,0.1)] bg-slate-950">
                 <img 
-                  src={bgStep0} 
+                  src="/assets/media__1782497767808.jpg" 
                   alt="Evolutia Logo Cover" 
                   className="w-full h-full object-cover opacity-90 scale-100 hover:scale-103 transition-transform duration-700"
                 />
@@ -436,7 +430,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                   {/* Anime Character Artwork integration */}
                   <div className="w-full h-36 rounded-xl overflow-hidden border border-indigo-500/20 shadow-lg relative bg-slate-950">
                     <img 
-                      src={charArtStep2} 
+                      src="/assets/media__1782497767681.jpg" 
                       alt="Guardián Místico" 
                       className="w-full h-full object-cover opacity-85 hover:scale-103 transition-transform duration-500"
                     />
