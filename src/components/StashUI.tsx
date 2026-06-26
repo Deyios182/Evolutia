@@ -16,6 +16,7 @@ const MAX_STACK = 99;
 export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag }: StashUIProps) {
   const [grid, setGrid] = useState<(StashSlot | null)[]>([]);
   const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   // Initialize and Migrate Old Inventory to Grid
   useEffect(() => {
@@ -73,6 +74,45 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
     }
   }, []);
 
+  const executeMove = (fromIdx: number, toIdx: number) => {
+    if (fromIdx === toIdx) return;
+    const newGrid = [...grid];
+    const source = newGrid[fromIdx];
+    if (!source) return;
+    const target = newGrid[toIdx];
+
+    if (!target) {
+      // Move to empty
+      newGrid[toIdx] = source;
+      newGrid[fromIdx] = null;
+    } else {
+      // Target occupied
+      if (
+        source.type === 'material' && target.type === 'material' &&
+        source.materialCategory === target.materialCategory &&
+        source.materialRarity === target.materialRarity
+      ) {
+        // Merge logic
+        const total = (source.quantity || 0) + (target.quantity || 0);
+        if (total <= MAX_STACK) {
+          target.quantity = total;
+          newGrid[fromIdx] = null;
+        } else {
+          const remainder = total - MAX_STACK;
+          target.quantity = MAX_STACK;
+          source.quantity = remainder;
+        }
+      } else {
+        // Swap logic
+        newGrid[toIdx] = source;
+        newGrid[fromIdx] = target;
+      }
+    }
+
+    setGrid(newGrid);
+    onSaveProgress({ ...progress, stashGrid: newGrid });
+  };
+
   const handleSlotClick = (index: number) => {
     if (selectedIndex === null) {
       // Select source
@@ -81,47 +121,37 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
       }
     } else {
       // Action: move/merge/swap
-      if (selectedIndex === index) {
-        // Deselect
-        setSelectedIndex(null);
-        return;
-      }
-
-      const newGrid = [...grid];
-      const source = newGrid[selectedIndex]!;
-      const target = newGrid[index];
-
-      if (!target) {
-        // Move to empty
-        newGrid[index] = source;
-        newGrid[selectedIndex] = null;
-      } else {
-        // Target occupied
-        if (
-          source.type === 'material' && target.type === 'material' &&
-          source.materialCategory === target.materialCategory &&
-          source.materialRarity === target.materialRarity
-        ) {
-          // Merge logic
-          const total = (source.quantity || 0) + (target.quantity || 0);
-          if (total <= MAX_STACK) {
-            target.quantity = total;
-            newGrid[selectedIndex] = null;
-          } else {
-            const remainder = total - MAX_STACK;
-            target.quantity = MAX_STACK;
-            source.quantity = remainder;
-          }
-        } else {
-          // Swap logic
-          newGrid[index] = source;
-          newGrid[selectedIndex] = target;
-        }
-      }
-
-      setGrid(newGrid);
+      executeMove(selectedIndex, index);
       setSelectedIndex(null);
-      onSaveProgress({ ...progress, stashGrid: newGrid });
+    }
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    e.dataTransfer.setData('text/plain', index.toString());
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (dragOverIndex !== index) {
+      setDragOverIndex(index);
+    }
+  };
+
+  const handleDragLeave = (index: number) => {
+    if (dragOverIndex === index) {
+      setDragOverIndex(null);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    const fromIdxStr = e.dataTransfer.getData('text/plain');
+    if (fromIdxStr !== '') {
+      const fromIdx = parseInt(fromIdxStr, 10);
+      if (!isNaN(fromIdx)) {
+        executeMove(fromIdx, index);
+      }
     }
   };
 
@@ -287,6 +317,7 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
           <div className="grid grid-cols-8 gap-1.5 auto-rows-max p-2 bg-[#14151c] rounded-lg border border-white/5 h-full content-start overflow-y-auto custom-scrollbar">
             {grid.map((slot, idx) => {
               const isSelected = selectedIndex === idx;
+              const isDragOver = dragOverIndex === idx;
               
               let bgClass = "bg-[#1d1f2a]";
               let borderClass = "border-white/5";
@@ -294,6 +325,9 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
               if (isSelected) {
                 bgClass = "bg-amber-900/40";
                 borderClass = "border-amber-500 shadow-[0_0_10px_rgba(245,158,11,0.5)]";
+              } else if (isDragOver) {
+                bgClass = "bg-amber-800/20";
+                borderClass = "border-amber-400 shadow-[0_0_10px_rgba(245,158,11,0.4)] scale-105 z-10";
               } else if (slot) {
                 bgClass = "bg-[#252836] hover:bg-[#2c3040]";
                 borderClass = "border-white/10 hover:border-white/30";
@@ -303,6 +337,11 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
                 <div 
                   key={idx}
                   onClick={() => handleSlotClick(idx)}
+                  draggable={!!slot}
+                  onDragStart={(e) => handleDragStart(e, idx)}
+                  onDragOver={(e) => handleDragOver(e, idx)}
+                  onDragLeave={() => handleDragLeave(idx)}
+                  onDrop={(e) => handleDrop(e, idx)}
                   className={`relative aspect-square rounded cursor-pointer transition-all border ${bgClass} ${borderClass} flex items-center justify-center select-none`}
                 >
                   {slot && renderIcon(slot)}

@@ -1226,6 +1226,8 @@ export function FirstPersonWorld({
   // Action RPG States
   const [showQuickInventory, setShowQuickInventory] = useState<boolean>(false);
   const [selectedDollSlot, setSelectedDollSlot] = useState<'mainHand' | 'offHand' | 'chest' | 'legs' | 'head' | 'backpack' | 'axe' | 'pickaxe' | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<keyof EquipmentSlots | null>(null);
+  const [activeInvTab, setActiveInvTab] = useState<'all' | 'weapons' | 'armor' | 'tools'>('all');
   const [dashCooldownLeft, setDashCooldownLeft] = useState<number>(0);
   const dashCooldownLeftRef = useRef<number>(0);
   const [skillCooldownLeft, setSkillCooldownLeft] = useState<number>(0);
@@ -1299,6 +1301,279 @@ export function FirstPersonWorld({
     }
 
     triggerNotification(item ? `🛡️ Te has equipado: ${item.name}` : `🛡️ Has desequipado la ranura ${slot.toUpperCase()}`);
+  };
+
+  const getAvatarColor = () => {
+    const avatar = progress.avatar;
+    let nColor = '#ffd700'; // Alegría / Default
+    const dominantEmotion = progress.dominantEmotion || 'Alegría';
+    
+    const EMOTION_HEX: Record<string, string> = {
+      Alegría: '#ffd700',
+      Amor: '#ff1493',
+      Ira: '#ff3b30',
+      Miedo: '#4b0082',
+      Serenidad: '#00e1d9',
+      Tristeza: '#3278ff',
+      Confianza: '#2cd178',
+      Sorpresa: '#ff9f29',
+      Orgullo: '#ce7aff',
+    };
+
+    if (avatar.colorTheme === 'abyssal') nColor = '#8b5cf6';
+    else if (avatar.colorTheme === 'solstice') nColor = '#f59e0b';
+    else if (avatar.colorTheme === 'primeval') nColor = '#ef4444';
+    else if (EMOTION_HEX[dominantEmotion]) nColor = EMOTION_HEX[dominantEmotion];
+    
+    return nColor;
+  };
+
+  const handleDropEquip = (slot: keyof EquipmentSlots, item: CraftableItem) => {
+    let isValid = false;
+    if (slot === 'mainHand') {
+      isValid = item.subType === 'weapon' || item.subType === 'weapon_1h' || item.subType === 'weapon_2h' || item.subType === 'ranged' || item.subType === 'grimoire';
+    } else if (slot === 'offHand') {
+      isValid = item.subType === 'shield';
+    } else if (slot === 'chest') {
+      isValid = item.subType === 'chest' || item.subType === 'armor';
+    } else if (slot === 'legs') {
+      isValid = item.subType === 'legs';
+    } else if (slot === 'head') {
+      isValid = item.subType === 'head';
+    } else if (slot === 'backpack') {
+      isValid = item.subType === 'backpack';
+    } else if (slot === 'axe') {
+      isValid = item.subType === 'axe';
+    } else if (slot === 'pickaxe') {
+      isValid = item.subType === 'pickaxe';
+    }
+
+    if (isValid) {
+      handleEquipItemInWorld(slot, item);
+    } else {
+      triggerNotification(`⚠️ No puedes equipar ${item.name} en la ranura ${slot.toUpperCase()}`);
+    }
+  };
+
+  const autoEquipItem = (item: CraftableItem) => {
+    let slot: keyof EquipmentSlots | null = null;
+    if (item.subType === 'weapon' || item.subType === 'weapon_1h' || item.subType === 'weapon_2h' || item.subType === 'ranged' || item.subType === 'grimoire') {
+      slot = 'mainHand';
+    } else if (item.subType === 'shield') {
+      slot = 'offHand';
+    } else if (item.subType === 'chest' || item.subType === 'armor') {
+      slot = 'chest';
+    } else if (item.subType === 'legs') {
+      slot = 'legs';
+    } else if (item.subType === 'head') {
+      slot = 'head';
+    } else if (item.subType === 'backpack') {
+      slot = 'backpack';
+    } else if (item.subType === 'axe') {
+      slot = 'axe';
+    } else if (item.subType === 'pickaxe') {
+      slot = 'pickaxe';
+    }
+
+    if (slot) {
+      handleEquipItemInWorld(slot, item);
+    }
+  };
+
+  const renderDollSlot = (slot: keyof EquipmentSlots, label: string, defaultEmoji: string, equippedEmoji: string) => {
+    const isSelected = selectedDollSlot === slot;
+    const isDragOver = dragOverSlot === slot;
+    const item = progress.equipment?.[slot];
+
+    let bgClass = "bg-[#0a0b10]";
+    let borderClass = "border-gray-700";
+
+    if (isSelected) {
+      bgClass = "bg-[#160b0f]";
+      borderClass = "border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]";
+    } else if (isDragOver) {
+      bgClass = "bg-[#221017]";
+      borderClass = "border-red-400 shadow-[0_0_15px_rgba(239,68,68,0.6)] scale-105";
+    } else if (item) {
+      bgClass = "bg-[#0d1b15]";
+      borderClass = "border-emerald-500/40 hover:border-emerald-500";
+    }
+
+    return (
+      <div 
+        onClick={() => setSelectedDollSlot(isSelected ? null : slot)}
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (dragOverSlot !== slot) setDragOverSlot(slot);
+        }}
+        onDragLeave={() => {
+          if (dragOverSlot === slot) setDragOverSlot(null);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOverSlot(null);
+          const data = e.dataTransfer.getData('text/plain');
+          if (data.startsWith('equip:')) {
+            const itemId = data.split(':')[1];
+            const foundItem = (progress.craftedItems || []).find(ci => ci.id === itemId);
+            if (foundItem) {
+              handleDropEquip(slot, foundItem);
+            }
+          }
+        }}
+        draggable={!!item}
+        onDragStart={(e) => {
+          e.dataTransfer.setData('text/plain', `unequip:${slot}`);
+        }}
+        className={`w-16 h-16 border rounded-lg flex flex-col items-center justify-center p-1 relative group cursor-pointer transition-all ${bgClass} ${borderClass}`}
+      >
+        <span className="text-[7px] absolute top-1 text-gray-500 font-mono tracking-wider">{label}</span>
+        <span className="text-xl mt-2 select-none">{item ? equippedEmoji : defaultEmoji}</span>
+        {item && item.tier && (
+          <span className="absolute bottom-0.5 right-1 text-[8px] font-mono font-bold text-amber-400 bg-black/60 px-0.5 rounded">
+            T{item.tier}
+          </span>
+        )}
+      </div>
+    );
+  };
+
+  const render2DAvatar = () => {
+    const avatarColor = getAvatarColor();
+    const eq = progress.equipment || {};
+    const hasGlowingEyes = progress.avatar.traits?.includes('Ojos Rutilantes');
+    
+    return (
+      <div className="relative w-56 h-64 flex items-center justify-center bg-black/40 border border-white/5 rounded-2xl p-4 overflow-hidden shadow-inner group select-none">
+        {/* Dynamic Grid Background */}
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:14px_24px] [mask-image:radial-gradient(ellipse_60%_50%_at_50%_50%,#000_70%,transparent_100%)] opacity-30 pointer-events-none" />
+        
+        {/* Background Summon/Scanning Ring */}
+        <div 
+          className="absolute w-44 h-44 rounded-full border border-dashed border-red-500/20 animate-spin"
+          style={{ animationDuration: '20s', borderColor: `${avatarColor}33` }}
+        />
+        <div 
+          className="absolute w-36 h-36 rounded-full border border-red-500/10 animate-spin"
+          style={{ animationDuration: '10s', animationDirection: 'reverse', borderColor: `${avatarColor}22` }}
+        />
+        
+        {/* Glow Aura */}
+        <div 
+          className="absolute w-32 h-32 rounded-full blur-[40px] opacity-20 animate-pulse transition-all duration-1000"
+          style={{ backgroundColor: avatarColor }}
+        />
+
+        {/* Interactive Doll Container with floating animation */}
+        <div className="relative flex flex-col items-center justify-center w-full h-full animate-[bounce_3s_ease-in-out_infinite]">
+          
+          {/* BACKPACK LAYER (behind body) */}
+          {eq.backpack && (
+            <div className="absolute -translate-y-2 translate-x-1 z-0 drop-shadow-[0_0_8px_rgba(239,68,68,0.3)]">
+              <span className="text-4xl">🎒</span>
+            </div>
+          )}
+
+          {/* MAIN BODY SPHERE */}
+          <div 
+            className="relative w-24 h-24 rounded-full border border-white/20 shadow-lg flex items-center justify-center z-10 transition-all duration-500 overflow-hidden"
+            style={{
+              background: `radial-gradient(circle at 35% 35%, #ffffff 0%, ${avatarColor}55 50%, #000000ee 100%)`,
+              boxShadow: `0 0 20px ${avatarColor}33, inset 0 0 15px rgba(255,255,255,0.2)`
+            }}
+          >
+            {/* Eyes Group */}
+            <div className="flex gap-4 mb-2 z-20">
+              <div 
+                className={`w-3 h-3 rounded-full ${hasGlowingEyes ? 'bg-white shadow-[0_0_8px_#fff]' : ''}`}
+                style={hasGlowingEyes ? {} : { backgroundColor: avatarColor }}
+              />
+              <div 
+                className={`w-3 h-3 rounded-full ${hasGlowingEyes ? 'bg-white shadow-[0_0_8px_#fff]' : ''}`}
+                style={hasGlowingEyes ? {} : { backgroundColor: avatarColor }}
+              />
+            </div>
+          </div>
+
+          {/* HEAD OVERLAY (Helmet/Hat) */}
+          {eq.head ? (
+            <div className="absolute top-4 z-20 animate-pulse drop-shadow-[0_0_10px_rgba(255,255,255,0.5)]">
+              <span className="text-4xl">🪖</span>
+              {eq.head.tier && (
+                <span className="absolute -top-1 -right-1 text-[8px] bg-amber-500 text-black px-1 rounded-full font-bold">
+                  T{eq.head.tier}
+                </span>
+              )}
+            </div>
+          ) : (
+            /* Default cute horns or halo if no headgear */
+            <div className="absolute top-6 z-20 flex gap-8 select-none pointer-events-none opacity-40">
+              <span className="text-xl rotate-[-20deg]">😈</span>
+              <span className="text-xl rotate-[20deg]">😈</span>
+            </div>
+          )}
+
+          {/* CHEST OVERLAY (Armor Rig) */}
+          {eq.chest ? (
+            <div className="absolute top-14 z-20 drop-shadow-[0_0_10px_rgba(245,158,11,0.4)]">
+              <span className="text-4xl">👕</span>
+              {eq.chest.tier && (
+                <span className="absolute -bottom-1 -right-1 text-[8px] bg-amber-500 text-black px-1 rounded-full font-bold">
+                  T{eq.chest.tier}
+                </span>
+              )}
+            </div>
+          ) : (
+            /* Default light wrap if no armor */
+            <div className="absolute top-16 z-20 opacity-20">
+              <span className="text-2xl">🧣</span>
+            </div>
+          )}
+
+          {/* LEGS OVERLAY (Greaves/Boots) */}
+          {eq.legs ? (
+            <div className="absolute bottom-6 z-20 drop-shadow-[0_0_10px_rgba(59,130,246,0.4)]">
+              <span className="text-3xl">👖</span>
+              {eq.legs.tier && (
+                <span className="absolute -bottom-1 -right-1 text-[8px] bg-amber-500 text-black px-1 rounded-full font-bold">
+                  T{eq.legs.tier}
+                </span>
+              )}
+            </div>
+          ) : (
+            <div className="absolute bottom-8 z-15 opacity-30">
+              <span className="text-xl">🥾</span>
+            </div>
+          )}
+
+          {/* HELD WEAPON (Left Hand Side) */}
+          <div className="absolute -left-8 top-16 z-25 flex items-center justify-center w-12 h-12 bg-white/5 border border-white/10 rounded-full backdrop-blur-md shadow-md animate-pulse">
+            {eq.mainHand ? (
+              <span className="text-2xl">
+                {eq.mainHand.subType === 'ranged' ? '🔫' : eq.mainHand.subType === 'grimoire' ? '🔮' : '⚔️'}
+              </span>
+            ) : (
+              <span className="text-sm text-gray-500">👊</span>
+            )}
+          </div>
+
+          {/* HELD SHIELD / OFF HAND (Right Hand Side) */}
+          <div className="absolute -right-8 top-16 z-25 flex items-center justify-center w-12 h-12 bg-white/5 border border-white/10 rounded-full backdrop-blur-md shadow-md animate-pulse">
+            {eq.offHand ? (
+              <span className="text-2xl">🛡️</span>
+            ) : (
+              <span className="text-sm text-gray-500">❌</span>
+            )}
+          </div>
+
+        </div>
+
+        {/* Hover Name Badge */}
+        <div className="absolute bottom-2 bg-black/60 px-3 py-0.5 rounded-full border border-white/10 backdrop-blur-sm z-30">
+          <span className="text-[10px] text-gray-300 font-mono tracking-wider font-bold uppercase">{progress.avatar.name || "Nitz Guardián"}</span>
+        </div>
+      </div>
+    );
   };
 
   // Calculate Weapon Mastery Multiplier (+5% per mastery level above 1)
@@ -5909,254 +6184,287 @@ export function FirstPersonWorld({
 
       {/* QUICK INVENTORY TACTICAL HUD */}
       <AnimatePresence>
-        {showQuickInventory && activeOverlay === 'none' && (
-          <motion.div
-            initial={{ opacity: 0, scale: 0.95 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.95 }}
-            className="absolute inset-2 md:inset-10 z-40 bg-[#07080c]/95 border-2 border-red-900/30 rounded-xl shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col md:flex-row overflow-hidden"
-          >
-            {/* Left Panel: Stats & Weight */}
-            <div className="w-full md:w-1/4 bg-black/40 border-r border-red-900/30 p-6 flex flex-col">
-              <h3 className="text-red-500 font-bold tracking-widest text-lg mb-6 border-b border-red-900/50 pb-2 uppercase flex items-center gap-2">
-                <Shield className="w-5 h-5" /> TACTICAL STATUS
-              </h3>
-              
-              <div className="space-y-6 flex-1">
-                <div className="bg-[#110505] border border-red-900/40 p-4 rounded-lg">
-                  <span className="text-[10px] text-red-500/70 font-mono uppercase block mb-1">Carga Física (Temp Bag)</span>
-                  <div className="flex justify-between items-end mb-2">
-                    <span className="text-2xl font-bold text-gray-200">{
-                      (tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 +
-                      (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 +
-                      (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3
-                    } <span className="text-xs text-gray-500">KG</span></span>
-                    <span className="text-xs text-red-500 font-mono">/ {progress.equipment?.backpack?.weightCapacity || 30} KG MAX</span>
-                  </div>
-                  <div className="w-full bg-black h-2 rounded-full overflow-hidden border border-red-900/50">
-                    <div className="bg-red-600 h-full transition-all" style={{ width: `${Math.min(100, (((tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 + (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 + (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3) / (progress.equipment?.backpack?.weightCapacity || 30)) * 100)}%` }} />
-                  </div>
-                </div>
+        {showQuickInventory && activeOverlay === 'none' && (() => {
+          const eligibleItems = (progress.craftedItems || []).filter(ci => {
+            if (selectedDollSlot) {
+              if (selectedDollSlot === 'mainHand') {
+                return ci.subType === 'weapon' || ci.subType === 'weapon_1h' || ci.subType === 'weapon_2h' || ci.subType === 'ranged' || ci.subType === 'grimoire';
+              }
+              if (selectedDollSlot === 'offHand') return ci.subType === 'shield';
+              if (selectedDollSlot === 'chest') return ci.subType === 'chest' || ci.subType === 'armor';
+              if (selectedDollSlot === 'legs') return ci.subType === 'legs';
+              if (selectedDollSlot === 'head') return ci.subType === 'head';
+              if (selectedDollSlot === 'backpack') return ci.subType === 'backpack';
+              if (selectedDollSlot === 'axe') return ci.subType === 'axe';
+              if (selectedDollSlot === 'pickaxe') return ci.subType === 'pickaxe';
+              return false;
+            }
+            
+            if (activeInvTab === 'weapons') {
+              return ci.subType === 'weapon' || ci.subType === 'weapon_1h' || ci.subType === 'weapon_2h' || ci.subType === 'ranged' || ci.subType === 'grimoire' || ci.subType === 'shield';
+            }
+            if (activeInvTab === 'armor') {
+              return ci.subType === 'chest' || ci.subType === 'armor' || ci.subType === 'legs' || ci.subType === 'head' || ci.subType === 'backpack';
+            }
+            if (activeInvTab === 'tools') {
+              return ci.subType === 'axe' || ci.subType === 'pickaxe';
+            }
+            return true; // 'all'
+          });
 
-                <div className="grid grid-cols-2 gap-3 text-xs">
-                  <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
-                    <span className="text-gray-500 block text-[9px] uppercase">HP Máximo</span>
-                    <span className="text-emerald-400 font-bold">{progress.maxHp || 100}</span>
-                  </div>
-                  <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
-                    <span className="text-gray-500 block text-[9px] uppercase">Oro de Supervivencia</span>
-                    <span className="text-yellow-500 font-bold">{progress.gold} G</span>
-                  </div>
-                </div>
-
-                {/* Weapon Masteries (Albion Style) */}
-                <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Maestrías de Arma</span>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">⚔️ Espada:</span>
-                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.sword || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.sword || 0}/500)</span></span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">🔫 A Distancia:</span>
-                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.ranged || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.ranged || 0}/500)</span></span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">🔮 Grimorio:</span>
-                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.grimoire || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.grimoire || 0}/500)</span></span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">👊 Puños:</span>
-                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.fists || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.fists || 0}/500)</span></span>
-                  </div>
-                </div>
-
-                {/* Refining Mastery (Albion Style) */}
-                <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
-                  <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Refinación</span>
-                  <div className="flex justify-between">
-                    <span className="text-gray-500">🔥 Nivel:</span>
-                    <span className="text-amber-500 font-bold">LVL {progress.refiningLevel || 1} <span className="text-[9.5px] text-gray-600">({progress.refiningExp || 0}/{(progress.refiningLevel || 1) * 300})</span></span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Middle Panel: Equipment Doll */}
-            <div className="flex-1 p-6 flex flex-col items-center justify-center relative">
-              <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500 via-transparent to-transparent pointer-events-none" />
-              
-              <div className="grid grid-cols-4 gap-4 relative z-10 w-full max-w-lg">
+          return (
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="absolute inset-2 md:inset-10 z-40 bg-[#07080c]/95 border-2 border-red-900/30 rounded-xl shadow-2xl backdrop-blur-xl pointer-events-auto flex flex-col md:flex-row overflow-hidden"
+            >
+              {/* Left Panel: Stats & Weight */}
+              <div className="w-full md:w-1/4 bg-black/40 border-r border-red-900/30 p-6 flex flex-col">
+                <h3 className="text-red-500 font-bold tracking-widest text-lg mb-6 border-b border-red-900/50 pb-2 uppercase flex items-center gap-2">
+                  <Shield className="w-5 h-5" /> TACTICAL STATUS
+                </h3>
                 
-                {/* Left Column (Main Hand, Rings) */}
-                <div className="space-y-4 flex flex-col items-end">
-                  <div 
-                    onClick={() => setSelectedDollSlot('mainHand')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative group cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'mainHand' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">MAIN HAND</span>
-                    <span className="text-xl mt-2">{progress.equipment?.mainHand ? (progress.equipment.mainHand.subType === 'ranged' ? '🔫' : progress.equipment.mainHand.subType === 'grimoire' ? '🔮' : '⚔️') : '✋'}</span>
+                <div className="space-y-6 flex-1">
+                  <div className="bg-[#110505] border border-red-900/40 p-4 rounded-lg">
+                    <span className="text-[10px] text-red-500/70 font-mono uppercase block mb-1">Carga Física (Temp Bag)</span>
+                    <div className="flex justify-between items-end mb-2">
+                      <span className="text-2xl font-bold text-gray-200">{
+                        (tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 +
+                        (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 +
+                        (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3
+                      } <span className="text-xs text-gray-500">KG</span></span>
+                      <span className="text-xs text-red-500 font-mono">/ {progress.equipment?.backpack?.weightCapacity || 30} KG MAX</span>
+                    </div>
+                    <div className="w-full bg-black h-2 rounded-full overflow-hidden border border-red-900/50">
+                      <div className="bg-red-600 h-full transition-all" style={{ width: `${Math.min(100, (((tempBag.wood.common + tempBag.wood.rare + tempBag.wood.epic + tempBag.wood.legendary) * 1 + (tempBag.stone.common + tempBag.stone.rare + tempBag.stone.epic + tempBag.stone.legendary) * 2 + (tempBag.metal.common + tempBag.metal.rare + tempBag.metal.epic + tempBag.metal.legendary) * 3) / (progress.equipment?.backpack?.weightCapacity || 30)) * 100)}%` }} />
+                    </div>
                   </div>
-                  <div className="w-12 h-12 bg-[#0a0b10] border border-gray-800 rounded-lg flex flex-col items-center justify-center relative">
-                    <span className="text-[7px] absolute top-1 text-gray-600">RING 1</span>
+
+                  <div className="grid grid-cols-2 gap-3 text-xs">
+                    <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
+                      <span className="text-gray-500 block text-[9px] uppercase">HP Máximo</span>
+                      <span className="text-emerald-400 font-bold">{progress.maxHp || 100}</span>
+                    </div>
+                    <div className="bg-[#1a1c23] p-3 rounded border border-white/5">
+                      <span className="text-gray-500 block text-[9px] uppercase">Oro de Supervivencia</span>
+                      <span className="text-yellow-500 font-bold">{progress.gold} G</span>
+                    </div>
+                  </div>
+
+                  {/* Weapon Masteries (Albion Style) */}
+                  <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Maestrías de Arma</span>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">⚔️ Espada:</span>
+                      <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.sword || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.sword || 0}/500)</span></span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">🔫 A Distancia:</span>
+                      <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.ranged || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.ranged || 0}/500)</span></span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">🔮 Grimorio:</span>
+                      <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.grimoire || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.grimoire || 0}/500)</span></span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">👊 Puños:</span>
+                      <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.fists || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.fists || 0}/500)</span></span>
+                    </div>
+                  </div>
+
+                  {/* Refining Mastery (Albion Style) */}
+                  <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
+                    <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Refinación</span>
+                    <div className="flex justify-between">
+                      <span className="text-gray-500">🔥 Nivel:</span>
+                      <span className="text-amber-500 font-bold">LVL {progress.refiningLevel || 1} <span className="text-[9.5px] text-gray-600">({progress.refiningExp || 0}/{(progress.refiningLevel || 1) * 300})</span></span>
+                    </div>
                   </div>
                 </div>
-
-                {/* Center Column (Head, Chest, Legs) */}
-                <div className="space-y-4 flex flex-col items-center">
-                  <div 
-                    onClick={() => setSelectedDollSlot('head')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'head' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">HEAD</span>
-                    <span className="text-xl mt-2">{progress.equipment?.head ? '🪖' : '👤'}</span>
-                  </div>
-                  <div 
-                    onClick={() => setSelectedDollSlot('chest')}
-                    className={`w-20 h-24 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'chest' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-600'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-400">CHEST RIG</span>
-                    <span className="text-3xl mt-2">{progress.equipment?.chest ? '🦺' : '👕'}</span>
-                  </div>
-                  <div 
-                    onClick={() => setSelectedDollSlot('legs')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'legs' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">LEGS</span>
-                    <span className="text-xl mt-2">{progress.equipment?.legs ? '🥾' : '👖'}</span>
-                  </div>
-                </div>
-
-                {/* Right Column (Off Hand, Backpack) */}
-                <div className="space-y-4 flex flex-col items-start">
-                  <div 
-                    onClick={() => setSelectedDollSlot('offHand')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'offHand' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">OFF HAND</span>
-                    <span className="text-xl mt-2">{progress.equipment?.offHand ? '🛡️' : '❌'}</span>
-                  </div>
-                  <div 
-                    onClick={() => setSelectedDollSlot('backpack')}
-                    className={`w-16 h-16 bg-[#1a0f0f] border rounded-lg flex flex-col items-center justify-center relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#1f1212] ${
-                      selectedDollSlot === 'backpack' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-red-900/50'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-red-500/70">BACKPACK</span>
-                    <span className="text-xl mt-2">{progress.equipment?.backpack ? '🎒' : '📦'}</span>
-                  </div>
-                </div>
-
-                {/* Fourth Column (Axe, Pickaxe tools) */}
-                <div className="space-y-4 flex flex-col items-start">
-                  <div 
-                    onClick={() => setSelectedDollSlot('axe')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'axe' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">AXE</span>
-                    <span className="text-xl mt-2">{progress.equipment?.axe ? '🪓' : '❌'}</span>
-                  </div>
-                  <div 
-                    onClick={() => setSelectedDollSlot('pickaxe')}
-                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
-                      selectedDollSlot === 'pickaxe' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
-                    }`}
-                  >
-                    <span className="text-[8px] absolute top-1 text-gray-500">PICKAXE</span>
-                    <span className="text-xl mt-2">{progress.equipment?.pickaxe ? '⛏️' : '❌'}</span>
-                  </div>
-                </div>
-
               </div>
-              <div className="mt-8 text-[10px] text-gray-600 font-mono uppercase tracking-widest">
-                [ Suelta TAB para cerrar interface ]
-              </div>
-            </div>
 
-            {/* Right Panel: Side-drawer Selector */}
-            {selectedDollSlot && (
-              <div className="w-full md:w-1/3 bg-[#0d0e1b]/95 border-l border-red-900/30 p-6 flex flex-col overflow-y-auto">
-                <div className="flex justify-between items-center border-b border-red-900/40 pb-2 mb-4">
-                  <h4 className="text-[#dec1ac] font-bold text-xs tracking-widest uppercase">
-                    Slot: {selectedDollSlot === 'mainHand' ? 'MANO PRINCIPAL' : selectedDollSlot === 'offHand' ? 'MANO SECUNDARIA' : selectedDollSlot === 'chest' ? 'PECHO / ARMADURA' : selectedDollSlot === 'legs' ? 'PIERNAS' : selectedDollSlot === 'head' ? 'CABEZA' : selectedDollSlot === 'backpack' ? 'MOCHILA' : selectedDollSlot === 'axe' ? 'HACHA DE RECOLECCIÓN' : selectedDollSlot === 'pickaxe' ? 'PICO DE EXTRACCIÓN' : ''}
-                  </h4>
-                  <button 
-                    onClick={() => setSelectedDollSlot(null)}
-                    className="text-gray-400 hover:text-white text-xs uppercase"
-                  >
-                    cerrar
-                  </button>
-                </div>
+              {/* Middle Panel: Equipment Doll (Center 2D Avatar + Slots on Left & Right) */}
+              <div 
+                onDragOver={(e) => e.preventDefault()}
+                onDrop={(e) => {
+                  const data = e.dataTransfer.getData('text/plain');
+                  if (data.startsWith('unequip:')) {
+                    const slotToUnequip = data.split(':')[1] as keyof EquipmentSlots;
+                    handleEquipItemInWorld(slotToUnequip, null);
+                  }
+                }}
+                className="flex-1 p-6 flex flex-col items-center justify-center relative border-r border-red-900/30"
+              >
+                <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500 via-transparent to-transparent pointer-events-none" />
                 
-                <div className="space-y-2 flex-1">
-                  <button
-                    onClick={() => {
-                      handleEquipItemInWorld(selectedDollSlot, null);
-                      setSelectedDollSlot(null);
-                    }}
-                    className="w-full text-left bg-red-950/20 hover:bg-red-950/40 border border-red-500/30 text-red-400 p-2.5 rounded-lg text-xs font-bold transition-all uppercase animate-pulse"
-                  >
-                    ❌ Desequipar Ranura
-                  </button>
+                <div className="flex flex-row items-center justify-between gap-6 relative z-10 w-full max-w-xl">
                   
-                  {(() => {
-                    const eligibleItems = (progress.craftedItems || []).filter(ci => {
-                      if (selectedDollSlot === 'mainHand') {
-                        return ci.subType === 'weapon' || ci.subType === 'weapon_1h' || ci.subType === 'weapon_2h' || ci.subType === 'ranged' || ci.subType === 'grimoire';
-                      }
-                      if (selectedDollSlot === 'offHand') return ci.subType === 'shield';
-                      if (selectedDollSlot === 'chest') return ci.subType === 'chest' || ci.subType === 'armor';
-                      if (selectedDollSlot === 'legs') return ci.subType === 'legs';
-                      if (selectedDollSlot === 'head') return ci.subType === 'head';
-                      if (selectedDollSlot === 'backpack') return ci.subType === 'backpack';
-                      if (selectedDollSlot === 'axe') return ci.subType === 'axe';
-                      if (selectedDollSlot === 'pickaxe') return ci.subType === 'pickaxe';
-                      return false;
-                    });
+                  {/* Left Column (Head, Chest, Legs, Backpack armor slots) */}
+                  <div className="space-y-4 flex flex-col items-end">
+                    {renderDollSlot('head', 'HEAD', '👤', '🪖')}
+                    {renderDollSlot('chest', 'CHEST RIG', '👕', '🦺')}
+                    {renderDollSlot('legs', 'LEGS', '👖', '🥾')}
+                    {renderDollSlot('backpack', 'BACKPACK', '📦', '🎒')}
+                  </div>
 
-                    if (eligibleItems.length === 0) {
-                      return <p className="text-[10px] text-gray-500 italic mt-4 text-center">No tienes equipamiento fabricado compatible en tu inventario.</p>;
-                    }
+                  {/* Center Column (2D Avatar Rendering) */}
+                  <div className="flex flex-col items-center justify-center">
+                    {render2DAvatar()}
+                  </div>
 
-                    return eligibleItems.map(item => (
-                      <div 
-                        key={item.id}
-                        onClick={() => {
-                          if (!item.equipped) {
-                            handleEquipItemInWorld(selectedDollSlot, item);
-                          }
-                          setSelectedDollSlot(null);
-                        }}
-                        className={`p-2.5 rounded-lg border text-xs flex justify-between items-center transition-all ${
-                          item.equipped 
-                            ? 'bg-emerald-950/30 border-emerald-500/50 text-emerald-400' 
-                            : 'bg-[#121422] border-white/5 text-gray-300 hover:border-red-900/50 hover:bg-[#1a1c2d] cursor-pointer'
+                  {/* Right Column (Main Hand, Off Hand, Axe, Pickaxe slots) */}
+                  <div className="space-y-4 flex flex-col items-start">
+                    {renderDollSlot('mainHand', 'MAIN HAND', '✋', 
+                      progress.equipment?.mainHand 
+                        ? (progress.equipment.mainHand.subType === 'ranged' ? '🔫' : progress.equipment.mainHand.subType === 'grimoire' ? '🔮' : '⚔️')
+                        : '✋'
+                    )}
+                    {renderDollSlot('offHand', 'OFF HAND', '❌', '🛡️')}
+                    {renderDollSlot('axe', 'AXE', '❌', '🪓')}
+                    {renderDollSlot('pickaxe', 'PICKAXE', '❌', '⛏️')}
+                  </div>
+
+                </div>
+                <div className="mt-8 text-[9px] text-gray-500 font-mono uppercase tracking-widest text-center">
+                  [ Arrastra ítems para equipar/desequipar | Suelta TAB para cerrar ]
+                </div>
+              </div>
+
+              {/* Right Panel: Scrollable general inventory */}
+              <div className="w-full md:w-1/3 bg-[#0d0e1b]/95 p-6 flex flex-col overflow-hidden">
+                <div className="flex justify-between items-center border-b border-red-900/40 pb-3 mb-4">
+                  <h4 className="text-[#dec1ac] font-bold text-sm tracking-widest uppercase flex items-center gap-2">
+                    💼 Mochila de Equipo
+                  </h4>
+                  {selectedDollSlot && (
+                    <button 
+                      onClick={() => setSelectedDollSlot(null)}
+                      className="text-[10px] bg-red-500/20 hover:bg-red-500/30 text-red-400 px-2 py-0.5 rounded border border-red-500/30 uppercase font-mono transition-all"
+                    >
+                      Ver Todo
+                    </button>
+                  )}
+                </div>
+
+                {/* Category tabs */}
+                {!selectedDollSlot ? (
+                  <div className="grid grid-cols-4 gap-1.5 mb-4 text-[10px] font-mono font-bold text-center">
+                    {(['all', 'weapons', 'armor', 'tools'] as const).map(tab => (
+                      <button
+                        key={tab}
+                        onClick={() => setActiveInvTab(tab)}
+                        className={`py-1.5 rounded transition-all border uppercase ${
+                          activeInvTab === tab 
+                            ? 'bg-red-950/30 border-red-500/50 text-red-400' 
+                            : 'bg-black/40 border-white/5 text-gray-500 hover:border-white/10 hover:text-gray-300'
                         }`}
                       >
-                        <div>
-                          <div className="font-bold">{item.name}</div>
-                          <div className="text-[9px] text-gray-400">{item.statBonus || 'Sin bonus'}</div>
+                        {tab === 'all' ? 'Todos' : tab === 'weapons' ? 'Armas' : tab === 'armor' ? 'Armadura' : 'Útiles'}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="bg-red-950/20 border border-red-500/20 p-2.5 rounded-lg mb-4 text-[10px] font-mono text-red-300 flex justify-between items-center">
+                    <span>Filtrando ranura: <strong>{selectedDollSlot.toUpperCase()}</strong></span>
+                    <button 
+                      onClick={() => {
+                        handleEquipItemInWorld(selectedDollSlot, null);
+                        setSelectedDollSlot(null);
+                      }}
+                      className="bg-red-600/30 hover:bg-red-600/40 px-2 py-0.5 rounded font-bold uppercase transition-all"
+                    >
+                      Desequipar
+                    </button>
+                  </div>
+                )}
+
+                {/* List of items */}
+                <div className="flex-1 overflow-y-auto space-y-2 pr-1 custom-scrollbar">
+                  {eligibleItems.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-32 opacity-40">
+                      <span className="text-3xl mb-2">📦</span>
+                      <p className="text-[10px] text-gray-400 italic text-center">
+                        {selectedDollSlot 
+                          ? 'No tienes equipamiento fabricado compatible.' 
+                          : 'Mochila vacía. Fabrica equipo en la Forja.'}
+                      </p>
+                    </div>
+                  ) : (
+                    eligibleItems.map(item => {
+                      let subEmoji = '🛡️';
+                      if (item.subType === 'axe') subEmoji = '🪓';
+                      else if (item.subType === 'pickaxe') subEmoji = '⛏️';
+                      else if (item.subType === 'weapon' || item.subType === 'weapon_1h' || item.subType === 'weapon_2h') subEmoji = '⚔️';
+                      else if (item.subType === 'ranged') subEmoji = '🔫';
+                      else if (item.subType === 'grimoire') subEmoji = '🔮';
+                      else if (item.subType === 'chest' || item.subType === 'armor') subEmoji = '👕';
+                      else if (item.subType === 'head') subEmoji = '🪖';
+                      else if (item.subType === 'legs') subEmoji = '👖';
+                      else if (item.subType === 'backpack') subEmoji = '🎒';
+
+                      return (
+                        <div 
+                          key={item.id}
+                          draggable={!item.equipped}
+                          onDragStart={(e) => {
+                            e.dataTransfer.setData('text/plain', `equip:${item.id}`);
+                          }}
+                          onClick={() => {
+                            if (!item.equipped) {
+                              if (selectedDollSlot) {
+                                handleDropEquip(selectedDollSlot, item);
+                                setSelectedDollSlot(null);
+                              } else {
+                                autoEquipItem(item);
+                              }
+                            } else {
+                              const equippedSlot = Object.keys(progress.equipment || {}).find(
+                                k => progress.equipment?.[k as keyof EquipmentSlots]?.id === item.id
+                              ) as keyof EquipmentSlots | undefined;
+                              if (equippedSlot) {
+                                handleEquipItemInWorld(equippedSlot, null);
+                              }
+                            }
+                          }}
+                          className={`p-2.5 rounded-lg border text-xs flex justify-between items-center transition-all cursor-pointer ${
+                            item.equipped 
+                              ? 'bg-emerald-950/20 border-emerald-500/40 text-emerald-400' 
+                              : 'bg-[#121422] border-white/5 text-gray-300 hover:border-red-900/50 hover:bg-[#1a1c2d]'
+                          }`}
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg">{subEmoji}</span>
+                            <div>
+                              <div className="font-bold flex items-center gap-1.5">
+                                {item.name}
+                                {item.tier && (
+                                  <span className="text-[8px] bg-red-950/60 border border-red-500/20 text-red-400 font-mono font-extrabold px-1 rounded">
+                                    T{item.tier}
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[9px] text-gray-500 font-mono">{item.statBonus || 'Sin bonus'}</div>
+                            </div>
+                          </div>
+                          {item.equipped ? (
+                            <span className="text-[9px] font-bold text-emerald-400/80 bg-emerald-500/10 border border-emerald-500/20 px-1.5 py-0.5 rounded font-mono uppercase">
+                              Equipado
+                            </span>
+                          ) : (
+                            <span className="text-[8px] opacity-0 group-hover:opacity-100 text-gray-500 font-mono">
+                              ARRAS. / CLIC
+                            </span>
+                          )}
                         </div>
-                        {item.equipped && <span className="text-[10px] font-bold">Equipado</span>}
-                      </div>
-                    ));
-                  })()}
+                      );
+                    })
+                  )}
                 </div>
               </div>
-            )}
-          </motion.div>
-        )}
+            </motion.div>
+          );
+        })()}
       </AnimatePresence>
 
       {/* MOBILE TOUCH CONTROLS */}
