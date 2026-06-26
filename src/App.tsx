@@ -118,6 +118,74 @@ export default function App() {
   const [currentView, setCurrentView] = useState<GameView>('onboarding');
   const [initLoaded, setInitLoaded] = useState(false);
   const [activeNotifier, setActiveNotifier] = useState<string | null>(null);
+  const [showAdminNav, setShowAdminNav] = useState(false);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Shift + Tab to toggle navbar visibility
+      if (e.shiftKey && e.key === 'Tab') {
+        e.preventDefault();
+        setShowAdminNav(prev => !prev);
+        return;
+      }
+
+      // Check if user is authorized as admin (progress.isAdmin or nav is shown)
+      const isAdmin = progress.isAdmin || showAdminNav;
+      if (!isAdmin) return;
+
+      // Don't switch if typing in input fields
+      if (document.activeElement?.tagName === 'INPUT' || document.activeElement?.tagName === 'TEXTAREA') {
+        return;
+      }
+
+      // View switching shortcuts: Alt + Number keys
+      if (e.altKey) {
+        switch (e.key) {
+          case '1':
+            e.preventDefault();
+            setCurrentView('home');
+            break;
+          case '2':
+            e.preventDefault();
+            setCurrentView('lobby');
+            break;
+          case '3':
+            e.preventDefault();
+            setCurrentView('open_world');
+            break;
+          case '4':
+            e.preventDefault();
+            setCurrentView('vecindario');
+            break;
+          case '5':
+            e.preventDefault();
+            setCurrentView('crafting');
+            break;
+          case '6':
+            e.preventDefault();
+            setCurrentView('minigame');
+            break;
+          case '7':
+            e.preventDefault();
+            setCurrentView('battle');
+            break;
+          case '8':
+            e.preventDefault();
+            setCurrentView('codex');
+            break;
+          case '9':
+            e.preventDefault();
+            setCurrentView('first_person');
+            break;
+          default:
+            break;
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [progress.isAdmin, showAdminNav]);
 
   const getDominantOfProgress = (p: PlayerProgress): { name: string; value: number } => {
     let maxName = 'Alegría';
@@ -201,7 +269,7 @@ export default function App() {
             username: user.displayName || user.email || 'Guardián Místico',
             avatarUrl: user.photoURL || '',
           }));
-          setCurrentView(v => v !== 'onboarding' ? 'home' : v);
+          setCurrentView(v => v !== 'onboarding' ? 'first_person' : v);
         }
       } else {
         // Logged out: restore offline file progress if available
@@ -242,7 +310,7 @@ export default function App() {
             };
             setProgress(merged);
             if (parsed.username) {
-              setCurrentView('home');
+              setCurrentView('first_person');
             } else {
               setCurrentView('onboarding');
             }
@@ -534,142 +602,145 @@ export default function App() {
       ) : (
         <>
           {/* Main Social / Caring Dashboard Header */}
-          <header className="relative z-10 border-b border-white/5 bg-[#121424]/90 backdrop-blur-md px-4 md:px-8 py-3.5 flex flex-col lg:flex-row gap-4 items-center justify-between sticky top-0 shadow-lg">
-            
-            {/* Logo and Brand Identity */}
-            <div className="flex items-center gap-3">
-              <span className="w-1 h-8 bg-tertiary rounded-full shadow-[0_0_10px_#dec1ac]" />
-              <div className="cursor-pointer" onClick={() => setCurrentView('home')}>
-                <h1 className="text-xl md:text-2xl font-bold tracking-widest font-headline-lg text-glow-silver bg-gradient-to-r from-white via-[#c4c5da] to-[#8a8b9e] bg-clip-text text-transparent">
-                  EVOLUTIA
-                </h1>
-                <span className="text-[9px] uppercase tracking-wider block text-tertiary font-semibold -mt-1 font-mono">CRÓNICAS DEL ORIGEN</span>
+          {/* Main Social / Caring Dashboard Header */}
+          {(progress.isAdmin || showAdminNav) && (
+            <header className="relative z-10 border-b border-white/5 bg-[#121424]/90 backdrop-blur-md px-4 md:px-8 py-3.5 flex flex-col lg:flex-row gap-4 items-center justify-between sticky top-0 shadow-lg">
+              
+              {/* Logo and Brand Identity */}
+              <div className="flex items-center gap-3">
+                <span className="w-1 h-8 bg-tertiary rounded-full shadow-[0_0_10px_#dec1ac]" />
+                <div className="cursor-pointer" onClick={() => setCurrentView('home')}>
+                  <h1 className="text-xl md:text-2xl font-bold tracking-widest font-headline-lg text-glow-silver bg-gradient-to-r from-white via-[#c4c5da] to-[#8a8b9e] bg-clip-text text-transparent">
+                    EVOLUTIA
+                  </h1>
+                  <span className="text-[9px] uppercase tracking-wider block text-tertiary font-semibold -mt-1 font-mono">CRÓNICAS DEL ORIGEN</span>
+                </div>
               </div>
-            </div>
 
-            {/* View Switcher Controls */}
-            <nav className="flex items-center gap-1.5 flex-wrap">
-              <button
-                onClick={() => { setCurrentView('first_person'); requestFullScreen(); }}
-                className={`px-3 md:px-5 py-2 rounded-full text-xs font-extrabold transition-all flex items-center gap-1.5 ${
-                  currentView === 'first_person' 
-                    ? 'bg-gradient-to-r from-amber-400 to-[#dec1ac] text-slate-950 font-black shadow-[0_0_15px_rgba(222,193,172,0.4)]' 
-                    : 'bg-white/5 border border-white/10 text-on-surface-variant hover:text-white hover:bg-white/10'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5 animate-bounce text-slate-950" />
-                <span>MUNDO 3D INMERSIVO 🌍</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('home')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'home' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Heart className="w-3.5 h-3.5" />
-                <span>Cabaña</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('lobby')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'lobby' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Compass className="w-3.5 h-3.5" />
-                <span>Lobby</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('open_world')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'open_world' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Map className="w-3.5 h-3.5" />
-                <span>Mundo</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('vecindario')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'vecindario' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Users className="w-3.5 h-3.5" />
-                <span>Vecindario</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('crafting')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'crafting' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Hammer className="w-3.5 h-3.5" />
-                <span>Forja</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('minigame')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'minigame' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Music className="w-3.5 h-3.5" />
-                <span>Sintonía</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('battle')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'battle' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <Swords className="w-3.5 h-3.5" />
-                <span>Arena</span>
-              </button>
-              <button
-                onClick={() => setCurrentView('codex')}
-                className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
-                  currentView === 'codex' 
-                    ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
-                    : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
-                }`}
-              >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Códice</span>
-              </button>
-            </nav>
+              {/* View Switcher Controls */}
+              <nav className="flex items-center gap-1.5 flex-wrap">
+                <button
+                  onClick={() => { setCurrentView('first_person'); requestFullScreen(); }}
+                  className={`px-3 md:px-5 py-2 rounded-full text-xs font-extrabold transition-all flex items-center gap-1.5 ${
+                    currentView === 'first_person' 
+                      ? 'bg-gradient-to-r from-amber-400 to-[#dec1ac] text-slate-950 font-black shadow-[0_0_15px_rgba(222,193,172,0.4)]' 
+                      : 'bg-white/5 border border-white/10 text-on-surface-variant hover:text-white hover:bg-white/10'
+                  }`}
+                >
+                  <Sparkles className="w-3.5 h-3.5 animate-bounce text-slate-950" />
+                  <span>MUNDO 3D INMERSIVO 🌍</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('home')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'home' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Heart className="w-3.5 h-3.5" />
+                  <span>Cabaña</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('lobby')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'lobby' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Compass className="w-3.5 h-3.5" />
+                  <span>Lobby</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('open_world')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'open_world' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Map className="w-3.5 h-3.5" />
+                  <span>Mundo</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('vecindario')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'vecindario' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Users className="w-3.5 h-3.5" />
+                  <span>Vecindario</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('crafting')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'crafting' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Hammer className="w-3.5 h-3.5" />
+                  <span>Forja</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('minigame')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'minigame' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Music className="w-3.5 h-3.5" />
+                  <span>Sintonía</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('battle')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'battle' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <Swords className="w-3.5 h-3.5" />
+                  <span>Arena</span>
+                </button>
+                <button
+                  onClick={() => setCurrentView('codex')}
+                  className={`px-3 md:px-4 py-2 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 ${
+                    currentView === 'codex' 
+                      ? 'bg-[#dec1ac]/15 border border-tertiary text-[#dec1ac] shadow' 
+                      : 'text-on-surface-variant hover:text-white hover:bg-white/5 border border-transparent'
+                  }`}
+                >
+                  <BookOpen className="w-3.5 h-3.5" />
+                  <span>Códice</span>
+                </button>
+              </nav>
 
-            {/* Google Authentication component & resetting */}
-            <div className="flex items-center gap-3">
-              <GoogleAuthButton 
-                isLoggedIn={progress.isLoggedIn}
-                username={progress.username}
-                onLogin={handleLogin}
-                onLogout={handleLogout}
-              />
-              <button
-                onClick={handleResetProgress}
-                title="Reiniciar Progreso de Partida"
-                className="p-2bg-white/5 hover:bg-white/10 text-[#919097] hover:text-white border border-white/5 rounded-full transition-all active:scale-95 text-xs"
-              >
-                <RotateCcw className="w-4 h-4 text-white/60 hover:text-white" />
-              </button>
-            </div>
-          </header>
+              {/* Google Authentication component & resetting */}
+              <div className="flex items-center gap-3">
+                <GoogleAuthButton 
+                  isLoggedIn={progress.isLoggedIn}
+                  username={progress.username}
+                  onLogin={handleLogin}
+                  onLogout={handleLogout}
+                />
+                <button
+                  onClick={handleResetProgress}
+                  title="Reiniciar Progreso de Partida"
+                  className="p-2 bg-white/5 hover:bg-white/10 text-[#919097] hover:text-white border border-white/5 rounded-full transition-all active:scale-95 text-xs"
+                >
+                  <RotateCcw className="w-4 h-4 text-white/60 hover:text-white" />
+                </button>
+              </div>
+            </header>
+          )}
 
           {/* Core active content page container */}
-          <main className="flex-1 w-full p-4 md:p-8 z-10">
+          <main className={`flex-1 w-full z-10 flex flex-col ${currentView === 'first_person' ? 'p-0' : 'p-4 md:p-8'}`}>
             <AnimatePresence mode="wait">
               <motion.div
                 key={currentView}

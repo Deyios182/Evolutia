@@ -1,9 +1,104 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, ArrowRight, Eye, Shield, Compass, ChevronRight, LogIn, Key, Compass as CompassIcon, Lock } from 'lucide-react';
+import { Sparkles, ArrowRight, Shield, Lock } from 'lucide-react';
 import { AvatarCustomization } from '../types';
 import { auth, googleProvider } from '../firebase';
 import { signInWithPopup } from 'firebase/auth';
+
+// Epic Ambient Synthesizer using Web Audio API for generative background music
+class CelestialSynth {
+  private ctx: AudioContext | null = null;
+  private isPlaying = false;
+  private nextNoteTime = 0;
+  private chordIndex = 0;
+  private schedulerTimer: any = null;
+
+  // Spiritual chord progression: Am9 -> Fmaj9 -> Cmaj9 -> Em9
+  private chords = [
+    [220.00, 261.63, 329.63, 392.00, 493.88], // Am9
+    [174.61, 261.63, 349.23, 392.00, 440.00], // Fmaj9
+    [130.81, 261.63, 329.63, 392.00, 493.88], // Cmaj9
+    [164.81, 246.94, 329.63, 392.00, 440.00]  // Em9
+  ];
+
+  start() {
+    if (this.isPlaying) return;
+    try {
+      this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      this.isPlaying = true;
+      this.nextNoteTime = this.ctx.currentTime;
+      this.scheduler();
+    } catch (e) {
+      console.warn("AudioContext failed to start:", e);
+    }
+  }
+
+  stop() {
+    this.isPlaying = false;
+    if (this.schedulerTimer) clearTimeout(this.schedulerTimer);
+    if (this.ctx) {
+      this.ctx.close().catch(() => {});
+      this.ctx = null;
+    }
+  }
+
+  private playNote(freq: number, start: number, duration: number, volume = 0.04, type: OscillatorType = 'sine') {
+    if (!this.ctx) return;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    const filter = this.ctx.createBiquadFilter();
+
+    osc.connect(filter);
+    filter.connect(gain);
+    gain.connect(this.ctx.destination);
+
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, start);
+
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(600, start);
+    filter.frequency.exponentialRampToValueAtTime(1200, start + 0.15);
+    filter.frequency.exponentialRampToValueAtTime(250, start + duration);
+
+    gain.gain.setValueAtTime(0, start);
+    gain.gain.linearRampToValueAtTime(volume, start + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.0001, start + duration);
+
+    osc.start(start);
+    osc.stop(start + duration);
+  }
+
+  private scheduler() {
+    if (!this.isPlaying || !this.ctx) return;
+    while (this.nextNoteTime < this.ctx.currentTime + 0.3) {
+      const chord = this.chords[this.chordIndex];
+      const time = this.nextNoteTime;
+
+      // Deep root pad bass (rarely triggered)
+      if (Math.random() < 0.2) {
+        this.playNote(chord[0] * 0.5, time, 4.5, 0.05, 'triangle');
+      }
+
+      // Main arpeggio voice
+      const noteIndex = Math.floor(Math.random() * (chord.length - 1)) + 1;
+      const noteFreq = chord[noteIndex];
+      this.playNote(noteFreq, time, 2.0, 0.03, 'sine');
+
+      // Celestial bells
+      if (Math.random() < 0.45) {
+        this.playNote(noteFreq * 2, time, 0.9, 0.015, 'sine');
+      }
+
+      this.nextNoteTime += 0.45;
+
+      // Transition chords slowly
+      if (Math.random() < 0.08) {
+        this.chordIndex = (this.chordIndex + 1) % this.chords.length;
+      }
+    }
+    this.schedulerTimer = setTimeout(() => this.scheduler(), 100);
+  }
+}
 
 interface OnboardingProps {
   onComplete: (username: string, avatar: AvatarCustomization) => void;
@@ -13,7 +108,7 @@ interface OnboardingProps {
 }
 
 export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, onLogin, initialUsername }) => {
-  const [step, setStep] = useState<number>(1);
+  const [step, setStep] = useState<number>(0); // Start at step 0 for the title screen
   const [username, setUsername] = useState<string>(initialUsername || '');
   const [isAuthenticating, setIsAuthenticating] = useState<boolean>(false);
   
@@ -22,6 +117,8 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
   const [auraType, setAuraType] = useState<AvatarCustomization['auraType']>('stellar');
   const [colorTheme, setColorTheme] = useState<AvatarCustomization['colorTheme']>('classic');
   const [clothing, setClothing] = useState<AvatarCustomization['clothing']>('none');
+
+  const synthRef = useRef<CelestialSynth | null>(null);
 
   // Play mistic chime sound using Web Audio API
   const playCelestialChime = (freqs = [523.25, 659.25, 783.99, 1046.50]) => {
@@ -37,7 +134,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
         osc.frequency.setValueAtTime(freq, audioCtx.currentTime + idx * 0.15);
         
         gainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-        gainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + idx * 0.15 + 0.05);
+        gainNode.gain.linearRampToValueAtTime(0.12, audioCtx.currentTime + idx * 0.15 + 0.05);
         gainNode.gain.exponentialRampToValueAtTime(0.0001, audioCtx.currentTime + idx * 0.15 + 0.82);
         
         osc.start(audioCtx.currentTime + idx * 0.15);
@@ -49,8 +146,13 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
   };
 
   useEffect(() => {
-    // Play subtle entry sound
+    // Subtle entry bell sound
     playCelestialChime([392.00, 523.25, 659.25]);
+    return () => {
+      if (synthRef.current) {
+        synthRef.current.stop();
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -59,11 +161,23 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
     }
   }, [initialUsername]);
 
+  const handleStartGame = () => {
+    playCelestialChime([523.25, 659.25, 783.99, 1046.50]);
+    if (!synthRef.current) {
+      synthRef.current = new CelestialSynth();
+    }
+    synthRef.current.start();
+    setStep(1);
+  };
+
   const handleNextStep = () => {
     playCelestialChime([523.25, 659.25, 783.99]);
     if (step < 3) {
       setStep(prev => prev + 1);
     } else {
+      if (synthRef.current) {
+        synthRef.current.stop();
+      }
       onComplete(username || 'Guardián Celestial', {
         name: username || 'Nitz de Origen',
         accessory,
@@ -109,21 +223,134 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
 
   return (
     <div className="relative min-h-screen w-full flex items-center justify-center bg-[#05060f] text-[#e0e0fa] overflow-hidden px-4 md:px-8 py-10 selection:bg-[#dec1ac]/30">
-      {/* Animated Volumetric space matrix */}
+      
+      {/* Background Image transitions based on step */}
       <div className="absolute inset-0 z-0">
-        <div className="absolute top-1/4 left-1/4 w-[600px] h-[600px] bg-[#dec1ac]/5 rounded-full blur-[140px] animate-pulse" />
-        <div className="absolute bottom-1/4 right-1/4 w-[700px] h-[700px] bg-[#4f46e5]/5 rounded-full blur-[160px] animate-pulse" style={{ animationDuration: '10s' }} />
+        <AnimatePresence mode="wait">
+          {step === 0 && (
+            <motion.div
+              key="bg_step0"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.15 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.0 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/assets/media__1782497767808.jpg')" }}
+            />
+          )}
+          {step === 1 && (
+            <motion.div
+              key="bg_step1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.22 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.0 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/assets/media__1782497767554.jpg')" }}
+            />
+          )}
+          {step === 2 && (
+            <motion.div
+              key="bg_step2"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.18 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.0 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/assets/media__1782497767781.jpg')" }}
+            />
+          )}
+          {step === 3 && (
+            <motion.div
+              key="bg_step3"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.18 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 1.0 }}
+              className="absolute inset-0 bg-cover bg-center"
+              style={{ backgroundImage: "url('/assets/media__1782497767828.jpg')" }}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Ambient Dark Overlay with soft blur */}
+        <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-[3px]" />
+
+        {/* Floating Sparks/Particles */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none z-0">
+          {[...Array(30)].map((_, i) => {
+            const size = Math.random() * 4 + 2;
+            const left = Math.random() * 100;
+            const delay = Math.random() * 8;
+            const duration = Math.random() * 12 + 8;
+            return (
+              <div
+                key={i}
+                className="absolute rounded-full bg-[#dec1ac]/30 blur-[1px] animate-float-particles"
+                style={{
+                  width: `${size}px`,
+                  height: `${size}px`,
+                  left: `${left}%`,
+                  bottom: `-20px`,
+                  animationDelay: `${delay}s`,
+                  animationDuration: `${duration}s`,
+                }}
+              />
+            );
+          })}
+        </div>
+
         {/* Sky Dust stars */}
         <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_center,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:16px_16px]" />
       </div>
 
       {/* Narrative Card Container */}
-      <div className="relative z-10 w-full max-w-4xl bg-gradient-to-b from-[#101222] to-[#0a0b14] p-6 md:p-10 rounded-2xl border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.8)] overflow-hidden">
+      <div className="relative z-10 w-full max-w-4xl bg-gradient-to-b from-[#101222]/95 to-[#0a0b14]/98 p-6 md:p-10 rounded-2xl border border-white/10 shadow-[0_0_60px_rgba(0,0,0,0.85)] overflow-hidden transition-all">
         
         {/* Title glow line */}
         <div className="absolute top-0 inset-x-0 h-[2px] bg-gradient-to-r from-transparent via-[#dec1ac]/50 to-transparent" />
 
         <AnimatePresence mode="wait">
+          
+          {/* Step 0: Title Cover artwork screen */}
+          {step === 0 && (
+            <motion.div
+              key="start_screen"
+              initial={{ opacity: 0, scale: 0.96 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.96 }}
+              transition={{ duration: 0.6 }}
+              className="flex flex-col items-center justify-center text-center space-y-8 py-4"
+            >
+              {/* Cover Artwork */}
+              <div className="relative w-full max-w-xl aspect-video rounded-xl overflow-hidden border border-cyan-500/20 shadow-[0_0_40px_rgba(6,182,212,0.1)] bg-slate-950">
+                <img 
+                  src="/assets/media__1782497767808.jpg" 
+                  alt="Evolutia Logo Cover" 
+                  className="w-full h-full object-cover opacity-90 scale-100 hover:scale-103 transition-transform duration-700"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-[#0a0b14] via-transparent to-transparent" />
+              </div>
+
+              <div className="space-y-3">
+                <h1 className="text-4xl md:text-6xl font-black font-headline tracking-widest bg-gradient-to-r from-white via-[#dec1ac] to-[#ceaa92] bg-clip-text text-transparent drop-shadow-[0_2px_10px_rgba(0,0,0,0.5)]">
+                  EVOLUTIA
+                </h1>
+                <p className="text-[#dec1ac] font-mono text-xs uppercase tracking-widest font-extrabold flex items-center justify-center gap-1.5 animate-pulse">
+                  <span>🐾</span> Crónicas del Origen <span>•</span> Despertar Espiritual
+                </p>
+              </div>
+
+              <button
+                onClick={handleStartGame}
+                className="px-10 py-4 bg-gradient-to-r from-[#dec1ac] to-[#ceaa92] hover:from-white hover:to-white text-black font-black uppercase text-xs rounded-full tracking-widest transition-all duration-300 transform hover:scale-105 active:scale-95 shadow-[0_0_30px_rgba(222,193,172,0.3)] cursor-pointer flex items-center gap-2"
+              >
+                <span>Despertar el Alma</span>
+                <Sparkles className="w-4 h-4 text-black animate-pulse" />
+              </button>
+            </motion.div>
+          )}
+
           {step === 1 && (
             <motion.div 
               key="intro"
@@ -198,6 +425,17 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                   <p>
                     El enlace con el sistema de <strong className="text-white">Google Cloud</strong> mantendrá tu progreso intacto y te permitirá interactuar con el Lobby de jugadores en tiempo real.
                   </p>
+
+                  {/* Anime Character Artwork integration */}
+                  <div className="w-full h-36 rounded-xl overflow-hidden border border-indigo-500/20 shadow-lg relative bg-slate-950">
+                    <img 
+                      src="/assets/media__1782497767681.jpg" 
+                      alt="Guardián Místico" 
+                      className="w-full h-full object-cover opacity-85 hover:scale-103 transition-transform duration-500"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-[#101222] via-transparent to-transparent" />
+                  </div>
+
                   <div className="p-3 bg-indigo-950/20 border border-indigo-500/20 rounded-lg text-xs text-indigo-300 flex items-start gap-2.5">
                     <Shield className="w-5 h-5 flex-shrink-0 text-indigo-400 mt-0.5" />
                     <span>Tu progreso se almacenará de manera segura en tu perfil de Google en la nube y se cargará automáticamente al ingresar.</span>
@@ -234,7 +472,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                     <div className="space-y-3">
                       <button
                         onClick={handleGoogleConnect}
-                        className="w-full py-3 bg-white text-black hover:bg-neutral-100 rounded-lg text-xs font-extrabold flex items-center justify-center gap-2.5 transition active:scale-95 shadow-lg"
+                        className="w-full py-3 bg-white text-black hover:bg-neutral-100 rounded-lg text-xs font-extrabold flex items-center justify-center gap-2.5 transition active:scale-95 shadow-lg cursor-pointer"
                       >
                         <svg className="w-4 h-4" viewBox="0 0 24 24">
                           <path
@@ -256,7 +494,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                           setStep(3);
                           playCelestialChime([329.63, 392.00, 523.25]);
                         }}
-                        className="w-full py-2.5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg text-xs font-mono transition-all"
+                        className="w-full py-2.5 border border-white/10 text-gray-300 hover:text-white hover:bg-white/5 rounded-lg text-xs font-mono transition-all cursor-pointer"
                       >
                         Iniciar Modo Offline (Local)
                       </button>
@@ -339,13 +577,28 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                     </div>
                   </div>
 
-                  <div className="z-10 text-center space-y-1">
+                  {/* Crying elf dissolving decorative artwork card */}
+                  <div className="mt-4 flex gap-3 items-center p-3 bg-black/40 border border-white/5 rounded-xl">
+                    <div className="w-10 h-10 rounded-lg overflow-hidden border border-[#dec1ac]/20 flex-shrink-0 bg-slate-950">
+                      <img 
+                        src="/assets/media__1782497767828.jpg" 
+                        alt="Resonancia Mística" 
+                        className="w-full h-full object-cover"
+                      />
+                    </div>
+                    <div className="flex-1">
+                      <span className="text-[8px] font-mono text-tertiary block font-bold uppercase tracking-wide">Fusión Estelar Directa</span>
+                      <p className="text-[9px] text-gray-400 leading-tight">Tu esencia se sincroniza en el núcleo del Gran Árbol, materializando al primer Nitz.</p>
+                    </div>
+                  </div>
+
+                  <div className="z-10 text-center space-y-1 mt-4">
                     <input 
                       type="text" 
                       value={username} 
                       onChange={(e) => setUsername(e.target.value.slice(0, 24))}
                       placeholder="Nombra tu Avatar..."
-                      className="w-full text-center bg-black/40 border border-white/10 rounded-lg p-2 text-white text-xs placeholder-gray-500 outline-none focus:border-[#dec1ac]"
+                      className="w-full text-center bg-black/40 border border-white/10 rounded-lg p-2 text-white text-xs placeholder-gray-500 outline-none focus:border-[#dec1ac] font-bold"
                     />
                     <p className="text-[10px] text-gray-400">Personaliza libremente el nombre místico.</p>
                   </div>
@@ -368,7 +621,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                           <button
                             key={acc.id}
                             onClick={() => { setAccessory(acc.id as any); playCelestialChime([659]); }}
-                            className={`p-2.5 rounded text-xs transition border text-left ${accessory === acc.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
+                            className={`p-2.5 rounded text-xs transition border text-left cursor-pointer ${accessory === acc.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
                           >
                             {acc.label}
                           </button>
@@ -389,7 +642,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                           <button
                             key={au.id}
                             onClick={() => { setAuraType(au.id as any); playCelestialChime([440]); }}
-                            className={`p-2.5 rounded text-xs transition border text-left ${auraType === au.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
+                            className={`p-2.5 rounded text-xs transition border text-left cursor-pointer ${auraType === au.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
                           >
                             {au.label}
                           </button>
@@ -410,7 +663,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                           <button
                             key={cl.id}
                             onClick={() => { setColorTheme(cl.id as any); playCelestialChime([523, 783]); }}
-                            className={`p-2.5 rounded text-xs transition border text-left ${colorTheme === cl.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
+                            className={`p-2.5 rounded text-xs transition border text-left cursor-pointer ${colorTheme === cl.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
                           >
                             {cl.label}
                           </button>
@@ -431,7 +684,7 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                           <button
                             key={clt.id}
                             onClick={() => { setClothing(clt.id as any); playCelestialChime([392, 523]); }}
-                            className={`p-2.5 rounded text-xs transition border text-left ${clothing === clt.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
+                            className={`p-2.5 rounded text-xs transition border text-left cursor-pointer ${clothing === clt.id ? 'bg-[#dec1ac]/10 text-white border-[#dec1ac]' : 'bg-[#181a30] text-gray-400 border-white/5 hover:border-white/15'}`}
                           >
                             {clt.label}
                           </button>
@@ -445,14 +698,14 @@ export const Onboarding: React.FC<OnboardingProps> = ({ onComplete, isLoggedIn, 
                     <button
                       onClick={handleNextStep}
                       disabled={!username.trim()}
-                      className="flex-1 py-3.5 bg-gradient-to-r from-[#dec1ac] to-[#ceaa92] text-black disabled:opacity-40 font-extrabold rounded-xl transition active:scale-95 text-center flex items-center justify-center gap-1.5"
+                      className="flex-1 py-3.5 bg-gradient-to-r from-[#dec1ac] to-[#ceaa92] text-black disabled:opacity-40 font-extrabold rounded-xl transition active:scale-95 text-center flex items-center justify-center gap-1.5 cursor-pointer"
                     >
                       <span>Despertar en la Aldea Nitz</span>
-                      <Sparkles className="w-4 h-4" />
+                      <Sparkles className="w-4 h-4 text-black animate-pulse" />
                     </button>
                     <button
                       onClick={() => setStep(2)}
-                      className="px-6 py-3.5 border border-white/10 text-gray-400 hover:text-white rounded-xl text-xs transition"
+                      className="px-6 py-3.5 border border-white/10 text-gray-400 hover:text-white rounded-xl text-xs transition cursor-pointer"
                     >
                       Atrás
                     </button>

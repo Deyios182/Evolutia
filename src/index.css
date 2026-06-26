@@ -72,3 +72,24 @@ h1, h2, h3, .font-headline-lg {
   font-family: var(--font-headline);
 }
 
+@keyframes floatParticles {
+  0% {
+    transform: translateY(0) translateX(0) scale(1);
+    opacity: 0;
+  }
+  10% {
+    opacity: 0.8;
+  }
+  90% {
+    opacity: 0.8;
+  }
+  100% {
+    transform: translateY(-105vh) translateX(50px) scale(0.5);
+    opacity: 0;
+  }
+}
+
+.animate-float-particles {
+  animation: floatParticles linear infinite;
+}
+

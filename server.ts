@@ -6,6 +6,29 @@ import * as dotenv from 'dotenv';
 
 dotenv.config();
 
+// Copiar recursos multimedia desde el directorio de artefactos a public/assets para que Vite los sirva
+import * as fs from 'fs';
+try {
+  const artifactDir = 'C:\\Users\\Deyios\\.gemini\\antigravity-ide\\brain\\517ac0b2-2848-4e28-821b-5026cc8292ba';
+  const publicAssetsDir = path.join(process.cwd(), 'public', 'assets');
+  if (!fs.existsSync(publicAssetsDir)) {
+    fs.mkdirSync(publicAssetsDir, { recursive: true });
+  }
+  if (fs.existsSync(artifactDir)) {
+    const files = fs.readdirSync(artifactDir);
+    files.forEach(file => {
+      if (file.startsWith('media__1782497767') && file.endsWith('.jpg')) {
+        const srcPath = path.join(artifactDir, file);
+        const destPath = path.join(publicAssetsDir, file);
+        fs.copyFileSync(srcPath, destPath);
+      }
+    });
+    console.log('✅ Recursos multimedia copiados a public/assets.');
+  }
+} catch (e) {
+  console.warn('Error copiando recursos en server.ts:', e);
+}
+
 const app = express();
 const PORT = 3000;
 

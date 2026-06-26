@@ -149,6 +149,7 @@ export interface PlayerProgress {
   phase: number; // 1 to 5
   emotions: EmotionVector;
   interactionCount: number;
+  isAdmin?: boolean;
   unlockedArchetypes: string[];  
   // Albion RPG & Neighborhood system extensions
   inventory: GatheringInventory; // Deprecated slowly, kept for legacy UI compatibility until fully wiped
