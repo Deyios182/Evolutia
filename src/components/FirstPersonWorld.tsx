@@ -240,6 +240,163 @@ function createDetailedNitzMesh(
   return group;
 }
 
+function createDetailedPlayerAvatar(
+  avatar: AvatarCustomization,
+  dominantEmotion: EmotionName,
+  phase: number
+): THREE.Group {
+  const group = new THREE.Group();
+
+  // Color Theme Resolver
+  let themeColor = EMOTION_COLORS[dominantEmotion] || 0x00e1d9;
+  if (avatar.colorTheme === 'abyssal') themeColor = 0x8b5cf6;
+  else if (avatar.colorTheme === 'solstice') themeColor = 0xf59e0b;
+  else if (avatar.colorTheme === 'primeval') themeColor = 0xef4444;
+  else if (avatar.colorTheme === 'classic') themeColor = 0x00e1d9;
+
+  // --- 1. BASE HUMANOID PARTS ---
+  
+  // Torso / Body (robe extends lower)
+  const isRobe = avatar.clothing === 'robe_sage';
+  const bodyHeight = isRobe ? 1.3 : 0.9;
+  const bodyGeo = new THREE.CylinderGeometry(0.35, isRobe ? 0.55 : 0.35, bodyHeight, 16);
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: themeColor,
+    roughness: 0.4,
+    metalness: avatar.clothing === 'armor_shard' ? 0.8 : 0.1
+  });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  body.position.y = isRobe ? 0.45 : 0.65;
+  body.castShadow = true;
+  body.receiveShadow = true;
+  group.add(body);
+
+  // Head
+  const headGeo = new THREE.SphereGeometry(0.32, 24, 24);
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xf5f8ff,
+    roughness: 0.3
+  });
+  const head = new THREE.Mesh(headGeo, headMat);
+  head.position.y = isRobe ? 1.25 : 1.2;
+  head.castShadow = true;
+  group.add(head);
+
+  // Eyes (Glowing spheres)
+  const eyesGroup = new THREE.Group();
+  eyesGroup.position.set(0, 0, 0.28);
+  head.add(eyesGroup);
+
+  const eyeGeo = new THREE.SphereGeometry(0.06, 12, 12);
+  const eyeMat = new THREE.MeshBasicMaterial({ color: themeColor });
+
+  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+  leftEye.position.set(-0.11, 0, 0);
+  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
+  rightEye.position.set(0.11, 0, 0);
+  eyesGroup.add(leftEye, rightEye);
+
+  // --- 2. ACCESSORIES ON HEAD ---
+  if (avatar.accessory === 'halo') {
+    const haloGeo = new THREE.TorusGeometry(0.2, 0.025, 8, 24);
+    const haloMat = new THREE.MeshStandardMaterial({
+      color: 0xffd700,
+      emissive: 0xffd700,
+      emissiveIntensity: 0.6,
+      roughness: 0.1
+    });
+    const halo = new THREE.Mesh(haloGeo, haloMat);
+    halo.rotation.x = Math.PI / 2;
+    halo.position.set(0, 0.5, 0);
+    head.add(halo);
+  } else if (avatar.accessory === 'horn_gold') {
+    const hornGeo = new THREE.ConeGeometry(0.07, 0.3, 12);
+    hornGeo.translate(0, 0.15, 0);
+    const hornMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.1 });
+    
+    const hornL = new THREE.Mesh(hornGeo, hornMat);
+    hornL.position.set(-0.16, 0.22, 0);
+    hornL.rotation.z = 0.35;
+    
+    const hornR = new THREE.Mesh(hornGeo, hornMat);
+    hornR.position.set(0.16, 0.22, 0);
+    hornR.rotation.z = -0.35;
+    
+    head.add(hornL, hornR);
+  } else if (avatar.accessory === 'ribbon') {
+    const ribMat = new THREE.MeshStandardMaterial({ color: 0xff3b90, roughness: 0.6 });
+    const ribGroup = new THREE.Group();
+    ribGroup.position.set(0, 0.28, -0.15);
+    
+    const node1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.06), ribMat);
+    const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.06), ribMat);
+    wingL.position.set(-0.12, 0, 0);
+    wingL.rotation.z = 0.2;
+    const wingR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.06), ribMat);
+    wingR.position.set(0.12, 0, 0);
+    wingR.rotation.z = -0.2;
+    
+    ribGroup.add(node1, wingL, wingR);
+    head.add(ribGroup);
+  } else if (avatar.accessory === 'scarf_cozy') {
+    const scarfGeo = new THREE.TorusGeometry(0.26, 0.06, 8, 16);
+    const scarfMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
+    const scarf = new THREE.Mesh(scarfGeo, scarfMat);
+    scarf.rotation.x = Math.PI / 2;
+    scarf.position.set(0, -0.32, 0);
+    head.add(scarf);
+  }
+
+  // --- 3. CLOTHING/ARMOR OVERLAYS ---
+  if (avatar.clothing === 'shawl') {
+    const shawlGeo = new THREE.CylinderGeometry(0.42, 0.46, 0.22, 16);
+    const shawlMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
+    const shawl = new THREE.Mesh(shawlGeo, shawlMat);
+    shawl.position.y = 0.95;
+    group.add(shawl);
+  } else if (avatar.clothing === 'armor_shard') {
+    const armorMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.2 });
+    const plateFront = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.15), armorMat);
+    plateFront.position.set(0, isRobe ? 0.55 : 0.65, 0.22);
+    const plateBack = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.15), armorMat);
+    plateBack.position.set(0, isRobe ? 0.55 : 0.65, -0.22);
+    group.add(plateFront, plateBack);
+  }
+
+  // --- 4. LIMBS ---
+  const limbMat = new THREE.MeshStandardMaterial({ color: 0xf5f8ff, roughness: 0.4 });
+  const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
+  armGeo.translate(0, -0.3, 0);
+
+  const leftArm = new THREE.Mesh(armGeo, limbMat);
+  leftArm.name = 'leftArm';
+  leftArm.position.set(-0.46, 0.95, 0);
+  
+  const rightArm = new THREE.Mesh(armGeo, limbMat);
+  rightArm.name = 'rightArm';
+  rightArm.position.set(0.46, 0.95, 0);
+  
+  group.add(leftArm, rightArm);
+
+  if (!isRobe) {
+    const legGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.6, 8);
+    legGeo.translate(0, -0.3, 0);
+
+    const leftLeg = new THREE.Mesh(legGeo, limbMat);
+    leftLeg.name = 'leftLeg';
+    leftLeg.position.set(-0.16, 0.25, 0);
+    
+    const rightLeg = new THREE.Mesh(legGeo, limbMat);
+    rightLeg.name = 'rightLeg';
+    rightLeg.position.set(0.16, 0.25, 0);
+    
+    group.add(leftLeg, rightLeg);
+  }
+
+  group.scale.setScalar(0.75);
+  return group;
+}
+
 // Interface for local NPC enemies
 interface LocalEnemy {
   id: string;
@@ -603,25 +760,49 @@ function createDetailedGateMesh(type: string): THREE.Group {
   const group = new THREE.Group();
 
   if (type === 'door_cabin' || type === 'door_vecindario') {
-    // Wooden door
+    // Wooden door frame
     const frameMat = new THREE.MeshStandardMaterial({ color: 0x3d2314, roughness: 0.9 });
     const postL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.0, 0.2), frameMat);
-    postL.position.set(-1.0, 1.5, 0);
+    postL.position.set(-0.9, 1.5, 0);
     const postR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 3.0, 0.2), frameMat);
-    postR.position.set(1.0, 1.5, 0);
-    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.2, 0.2), frameMat);
+    postR.position.set(0.9, 1.5, 0);
+    const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.2, 0.2), frameMat);
     lintel.position.set(0, 3.0, 0);
     group.add(postL, postR, lintel);
 
-    const doorMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.8, 2.8, 0.1), doorMat);
-    panel.position.set(0, 1.4, 0);
-    group.add(panel);
+    // Hinge group at the left post
+    const hinge = new THREE.Group();
+    hinge.position.set(-0.8, 0, 0);
 
+    const doorMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
+    const panel = new THREE.Mesh(new THREE.BoxGeometry(1.6, 2.8, 0.1), doorMat);
+    panel.position.set(0.8, 1.4, 0); // Center relative to hinge
+    hinge.add(panel);
+
+    // Decorative vertical planks lines on the door
+    for (let offset = -0.6; offset <= 0.6; offset += 0.3) {
+      const lineGeo = new THREE.BoxGeometry(0.02, 2.6, 0.02);
+      const lineMat = new THREE.MeshStandardMaterial({ color: 0x27160c, roughness: 0.9 });
+      const line = new THREE.Mesh(lineGeo, lineMat);
+      line.position.set(0.8 + offset, 1.4, 0.051); // slightly offset to front
+      hinge.add(line);
+    }
+
+    // Lever handle
     const handleMat = new THREE.MeshStandardMaterial({ color: 0xffd700, metalness: 0.9, roughness: 0.1 });
-    const knob = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), handleMat);
-    knob.position.set(0.7, 1.3, 0.08);
-    group.add(knob);
+    const handleGroup = new THREE.Group();
+    handleGroup.position.set(1.4, 1.3, 0);
+    
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 0.12, 8), handleMat);
+    knob.rotation.x = Math.PI / 2;
+    const lever = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.02), handleMat);
+    lever.position.set(0, -0.04, 0.07);
+    handleGroup.add(knob, lever);
+    panel.add(handleGroup);
+
+    // Partially open angle
+    hinge.rotation.y = 0.7; // partially open inside
+    group.add(hinge);
 
   } else {
     // Magic/stone archways
@@ -714,6 +895,8 @@ import { StashUI } from './StashUI';
 import { WorkbenchUI } from './WorkbenchUI';
 import { RefinerUI } from './RefinerUI';
 import { GeminiLiveChat } from './GeminiLiveChat';
+import { AvatarCustomizeUI } from './AvatarCustomizeUI';
+import { ArmoryUI } from './ArmoryUI';
 
 interface FirstPersonWorldProps {
   progress: PlayerProgress;
@@ -741,6 +924,7 @@ interface OnlinePlayer {
   avatar?: AvatarCustomization;
   hp?: number;
   maxHp?: number;
+  isSpeaking?: boolean;
 }
 
 interface InteractiveNode3D {
@@ -748,7 +932,7 @@ interface InteractiveNode3D {
   name: string;
   x: number;
   z: number;
-  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash' | 'forge' | 'weaver' | 'enchanter';
+  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash' | 'forge' | 'weaver' | 'enchanter' | 'refiner' | 'wardrobe_mirror' | 'wardrobe_armory';
   rarity?: 'common' | 'rare' | 'epic' | 'legendary';
   clicksRequired?: number;
   clicksCurrent?: number;
@@ -822,9 +1006,24 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner';
+  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory';
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
+
+  // Refs for tracking attack cooldown and spatial proximity sound oscillators
+  const lastPlayerAttackTimeRef = useRef<number>(0);
+  const voiceAudioCtxRef = useRef<AudioContext | null>(null);
+  const peerVoiceOscillatorsRef = useRef<Map<string, { osc: OscillatorNode; panner: StereoPannerNode; gain: GainNode }>>(new Map());
+
+  const getVoiceAudioCtx = () => {
+    if (!voiceAudioCtxRef.current) {
+      voiceAudioCtxRef.current = new (window.AudioContext || (window as any).webkitAudioContext)();
+    }
+    if (voiceAudioCtxRef.current.state === 'suspended') {
+      voiceAudioCtxRef.current.resume();
+    }
+    return voiceAudioCtxRef.current;
+  };
 
   // Multi-player states
   const [onlinePlayers, setOnlinePlayers] = useState<OnlinePlayer[]>([]);
@@ -1353,6 +1552,10 @@ export function FirstPersonWorld({
       // If user presses V, activate proximity voice chat
       if ((e.key === 'v' || e.key === 'V') && activeOverlayRef.current === 'none') {
         setIsProximityChatActive(true);
+        if (auth.currentUser) {
+          const userRef = doc(db, 'users', auth.currentUser.uid);
+          updateDoc(userRef, { isSpeaking: true }).catch(err => {});
+        }
       }
     };
 
@@ -1364,6 +1567,10 @@ export function FirstPersonWorld({
 
       if (e.key === 'v' || e.key === 'V') {
         setIsProximityChatActive(false);
+        if (auth.currentUser) {
+          const userRef = doc(db, 'users', auth.currentUser.uid);
+          updateDoc(userRef, { isSpeaking: false }).catch(err => {});
+        }
       }
     };
 
@@ -1501,7 +1708,9 @@ export function FirstPersonWorld({
         { id: 'workbench_forge', name: 'Herrería de Combate Pesado', x: 5, z: -3, type: 'forge', label: '⚒️ Fabricar Armas y Blindaje' },
         { id: 'workbench_weaver', name: 'Telar de Supervivencia', x: -5, z: -3, type: 'weaver', label: '🧵 Fabricar Mochilas y Tela' },
         { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter', label: '🔮 Fabricar Grimorios y Joyas' },
-        { id: 'workbench_refiner', name: 'Refinería de Recursos Estelares', x: 2.5, z: -4.5, type: 'refiner', label: '🔥 Refinar Madera, Metal y Piedra' }
+        { id: 'workbench_refiner', name: 'Refinería de Recursos Estelares', x: 2.5, z: -4.5, type: 'refiner', label: '🔥 Refinar Madera, Metal y Piedra' },
+        { id: 'wardrobe_mirror', name: 'Espejo de Apariencia', x: -2.5, z: -4.5, type: 'wardrobe_mirror', label: '🪞 Personalizar Apariencia del Avatar' },
+        { id: 'wardrobe_armory', name: 'Armero de Pruebas', x: -2.5, z: -2.5, type: 'wardrobe_armory', label: '⚔️ Probar Armas y Equipamiento' }
       ];
       setPlayerX(0);
       setPlayerZ(4);
@@ -1670,6 +1879,8 @@ export function FirstPersonWorld({
           pvpEnabled: pvpEnabled,
           companionSummoned: progress.companionSummoned || false,
           activeNitzName: progress.avatar.name || 'Nitz de Origen',
+          avatar: progress.avatar || null,
+          isSpeaking: isProximityChatActive,
           lastActive: new Date().toISOString()
         });
       } catch (err) {
@@ -1678,7 +1889,7 @@ export function FirstPersonWorld({
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name]);
+  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name, isProximityChatActive]);
 
   // Listen for PvP duel challenges and state updates
   useEffect(() => {
@@ -2290,6 +2501,82 @@ export function FirstPersonWorld({
         scene.add(refinerGroup);
         activeMeshes.push(refinerGroup);
         return;
+      } else if (node.type === 'wardrobe_mirror') {
+        const mirrorGroup = new THREE.Group();
+        // Wooden frame
+        const frameGeo = new THREE.BoxGeometry(1.6, 2.4, 0.15);
+        const woodMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.8 });
+        const frame = new THREE.Mesh(frameGeo, woodMat);
+        frame.position.y = 1.2;
+        mirrorGroup.add(frame);
+
+        // Mirror glass
+        const glassGeo = new THREE.PlaneGeometry(1.3, 2.0);
+        const glassMat = new THREE.MeshStandardMaterial({
+          color: 0x86efac,
+          roughness: 0.1,
+          metalness: 0.9,
+          emissive: 0x155e75,
+          emissiveIntensity: 0.3
+        });
+        const glass = new THREE.Mesh(glassGeo, glassMat);
+        glass.position.set(0, 1.2, 0.08); // slightly in front of frame
+        mirrorGroup.add(glass);
+
+        // Rotate mirror to face the center of the cabin
+        mirrorGroup.rotation.y = Math.PI / 4;
+
+        mirrorGroup.position.set(node.x, 0, node.z);
+        mirrorGroup.name = node.id;
+        scene.add(mirrorGroup);
+        activeMeshes.push(mirrorGroup);
+        return;
+      } else if (node.type === 'wardrobe_armory') {
+        const armoryGroup = new THREE.Group();
+        // Stand/Backboard
+        const boardGeo = new THREE.BoxGeometry(1.8, 2.2, 0.3);
+        const boardMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.6, roughness: 0.4 });
+        const board = new THREE.Mesh(boardGeo, boardMat);
+        board.position.y = 1.1;
+        armoryGroup.add(board);
+
+        // Rack shelves
+        const shelfGeo = new THREE.BoxGeometry(1.7, 0.1, 0.4);
+        const ironMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.2 });
+        
+        const shelf1 = new THREE.Mesh(shelfGeo, ironMat);
+        shelf1.position.set(0, 0.5, 0.2);
+        const shelf2 = new THREE.Mesh(shelfGeo, ironMat);
+        shelf2.position.set(0, 1.3, 0.2);
+        armoryGroup.add(shelf1, shelf2);
+
+        // Small decorative swords/items inside the armory
+        // Sword mesh
+        const wepGroup = new THREE.Group();
+        const swordBlade = new THREE.Mesh(new THREE.BoxGeometry(0.1, 1.2, 0.03), new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.1 }));
+        swordBlade.position.y = 0.6;
+        const swordHilt = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 0.08), new THREE.MeshStandardMaterial({ color: 0xd97706 }));
+        swordHilt.position.y = 0.1;
+        wepGroup.add(swordBlade, swordHilt);
+        wepGroup.position.set(-0.4, 0.8, 0.2);
+        wepGroup.rotation.z = Math.PI / 8;
+        armoryGroup.add(wepGroup);
+
+        // Grimoire mesh
+        const bookMat = new THREE.MeshStandardMaterial({ color: 0x7e22ce, roughness: 0.5 });
+        const book = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.4, 0.1), bookMat);
+        book.position.set(0.4, 1.5, 0.25);
+        book.rotation.y = -Math.PI / 6;
+        armoryGroup.add(book);
+
+        // Rotate armory to face the center of the cabin
+        armoryGroup.rotation.y = Math.PI / 4;
+
+        armoryGroup.position.set(node.x, 0, node.z);
+        armoryGroup.name = node.id;
+        scene.add(armoryGroup);
+        activeMeshes.push(armoryGroup);
+        return;
       } else if (node.type === 'marketplace') {
         const martGroup = new THREE.Group();
         const standMat = new THREE.MeshStandardMaterial({ color: 0x5c3a21, roughness: 0.9 });
@@ -2439,7 +2726,7 @@ export function FirstPersonWorld({
     };
 
     // Populate actual online peers dynamically in tick loop via onlinePlayersRef to prevent scene re-creation
-    const peerMeshes: { id: string; mesh: THREE.Mesh; companionMesh?: THREE.Group | THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
+    const peerMeshes: { id: string; mesh: THREE.Group | THREE.Mesh; companionMesh?: THREE.Group | THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
 
     // Render Summoned Nitz Companion in open maps
     let companionMesh: THREE.Group | THREE.Mesh | null = null;
@@ -2853,59 +3140,90 @@ export function FirstPersonWorld({
       } else {
         // PLAYER ATTACK FIRE
         if (activeOverlayRef.current === 'none') {
-          // Play swoosh sound
+          const activeWep = progressRef.current.equipment?.mainHand?.subType;
+          
+          // Enforce weapon-specific attack speeds/cooldowns
+          const now = Date.now();
+          let cooldown = 300;
+          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') cooldown = 500;
+          else if (activeWep === 'ranged') cooldown = 220;
+          else if (activeWep === 'grimoire') cooldown = 900;
+          
+          if (now - lastPlayerAttackTimeRef.current < cooldown) {
+            return; // on cooldown
+          }
+          lastPlayerAttackTimeRef.current = now;
+
+          // Sound effects tailored to each weapon type
           try {
             const audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
             const osc = audioCtx.createOscillator();
             const gain = audioCtx.createGain();
-            osc.type = 'sawtooth';
-            osc.frequency.setValueAtTime(200, audioCtx.currentTime);
-            osc.frequency.exponentialRampToValueAtTime(50, audioCtx.currentTime + 0.15);
-            gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
-            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.15);
+            
+            if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') {
+              osc.type = 'sawtooth';
+              osc.frequency.setValueAtTime(350, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(80, audioCtx.currentTime + 0.12);
+              gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+            } else if (activeWep === 'ranged') {
+              osc.type = 'sine';
+              osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(300, audioCtx.currentTime + 0.08);
+              gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+            } else if (activeWep === 'grimoire') {
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(120, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(40, audioCtx.currentTime + 0.3);
+              gain.gain.setValueAtTime(0.4, audioCtx.currentTime);
+            } else {
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(250, audioCtx.currentTime);
+              osc.frequency.exponentialRampToValueAtTime(60, audioCtx.currentTime + 0.1);
+              gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            }
+            
+            gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.2);
             osc.connect(gain);
             gain.connect(audioCtx.destination);
             osc.start();
-            osc.stop(audioCtx.currentTime + 0.2);
+            osc.stop(audioCtx.currentTime + 0.22);
           } catch (_) {}
 
           // Spawn Player Projectile/Strike based on Equipped Weapon
-          const activeWep = progressRef.current.equipment?.mainHand?.subType;
-          
           let pGeo: THREE.BufferGeometry;
           let pMat: THREE.MeshBasicMaterial;
           let speed = 15.0; // Base speed
           let life = 60; // Base life
 
           if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') {
-            // Melee Slash
-            pGeo = new THREE.BoxGeometry(1.5, 0.1, 0.5);
-            pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            speed = 25.0;
-            life = 8; // Very short range for melee
+            // Sweep wave
+            pGeo = new THREE.BoxGeometry(1.6, 0.05, 0.3);
+            pMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.9 });
+            speed = 28.0;
+            life = 9; // short range melee
           } else if (activeWep === 'ranged') {
-            // Rifle Bullet
-            pGeo = new THREE.CylinderGeometry(0.05, 0.05, 1.2, 8);
+            // Fast golden bullet
+            pGeo = new THREE.CylinderGeometry(0.04, 0.04, 1.4, 8);
             pGeo.rotateX(Math.PI / 2);
             pMat = new THREE.MeshBasicMaterial({ color: 0xfacc15 }); // Gold bullet
-            speed = 45.0; // Very fast
-            life = 80;
+            speed = 52.0; // very fast
+            life = 75;
           } else if (activeWep === 'grimoire') {
-            // Magic Orb
-            pGeo = new THREE.SphereGeometry(0.5, 12, 12);
+            // Slow heavy magic orb
+            pGeo = new THREE.SphereGeometry(0.55, 12, 12);
             pMat = new THREE.MeshBasicMaterial({ color: 0xa855f7 }); // Purple plasma
-            speed = 10.0; // Slow orb
-            life = 120;
+            speed = 12.0; // slow moving orb
+            life = 100;
           } else {
-            // Default raw energy punch
-            pGeo = new THREE.SphereGeometry(0.2, 8, 8);
-            pMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
-            speed = 15.0;
-            life = 60;
+            // Concentric shockwave ring for fists/default
+            pGeo = new THREE.TorusGeometry(0.3, 0.03, 8, 16);
+            pGeo.rotateX(Math.PI / 2);
+            pMat = new THREE.MeshBasicMaterial({ color: 0x93c5fd, transparent: true, opacity: 0.8 }); // light blue ring
+            speed = 18.0;
+            life = 12; // very short range
           }
 
           const pMesh = new THREE.Mesh(pGeo, pMat);
-          
           pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
           scene.add(pMesh);
 
@@ -2913,12 +3231,16 @@ export function FirstPersonWorld({
           const dir = new THREE.Vector3();
           camera.getWorldDirection(dir);
 
-          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') {
-            // Rotate the melee slash to face the camera direction
-            pMesh.lookAt(pMesh.position.clone().add(dir));
-          } else if (activeWep === 'ranged') {
-            pMesh.lookAt(pMesh.position.clone().add(dir));
-          }
+          // Rotate the meshes appropriately to face forward
+          pMesh.lookAt(pMesh.position.clone().add(dir));
+
+          const masteryMult = getWeaponMasteryMultiplier(activeWep);
+          let baseDamage = 20;
+          if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h') baseDamage = 45;
+          else if (activeWep === 'ranged') baseDamage = 25;
+          else if (activeWep === 'grimoire') baseDamage = 60;
+
+          const dmg = Math.round(baseDamage * masteryMult);
 
           activeProjectiles.push({
             mesh: pMesh,
@@ -2927,7 +3249,8 @@ export function FirstPersonWorld({
             vz: dir.z * speed,
             life: life,
             isNitz: false,
-            damage: 35
+            damage: dmg,
+            isGrimoireSplash: activeWep === 'grimoire'
           });
         }
       }
@@ -3099,6 +3422,58 @@ export function FirstPersonWorld({
               }
               enemy.hp -= damageDealt;
 
+              if (p.isGrimoireSplash) {
+                // Trigger splash damage to nearby enemies
+                activeEnemies.forEach(otherEnemy => {
+                  if (otherEnemy.id === enemy.id || otherEnemy.isDead) return;
+                  const splashDist = otherEnemy.mesh.position.distanceTo(p.mesh.position);
+                  if (splashDist < 3.0) {
+                    otherEnemy.hp -= damageDealt;
+                    otherEnemy.flashTimer = 0.3;
+                    
+                    otherEnemy.mesh.traverse(child => {
+                      if (child instanceof THREE.Mesh && child.material) {
+                        if (Array.isArray(child.material)) {
+                          child.material.forEach(m => {
+                            if ((m as any).emissive) (m as any).emissive.setHex(0xff0000);
+                          });
+                        } else {
+                          if ((child.material as any).emissive) {
+                            (child.material as any).emissive.setHex(0xff0000);
+                          }
+                        }
+                      }
+                    });
+
+                    if (otherEnemy.hp <= 0) {
+                      handleEnemyDefeat(otherEnemy, true);
+                    }
+                  }
+                });
+
+                // Spawn a visual explosion sphere that expands and fades
+                const expGeo = new THREE.SphereGeometry(1.5, 16, 16);
+                const expMat = new THREE.MeshBasicMaterial({ color: 0xa855f7, transparent: true, opacity: 0.7 });
+                const expMesh = new THREE.Mesh(expGeo, expMat);
+                expMesh.position.copy(p.mesh.position);
+                scene.add(expMesh);
+                
+                let expScale = 0.1;
+                const animateExp = () => {
+                  expScale += 0.15;
+                  expMesh.scale.setScalar(expScale);
+                  expMat.opacity -= 0.05;
+                  if (expMat.opacity > 0) {
+                    requestAnimationFrame(animateExp);
+                  } else {
+                    scene.remove(expMesh);
+                    expGeo.dispose();
+                    expMat.dispose();
+                  }
+                };
+                animateExp();
+              }
+
               if (isPlayerProjectile) {
                 const activeWep = progressRef.current.equipment?.mainHand?.subType;
                 let wepType: 'sword' | 'ranged' | 'grimoire' | 'fists' = 'fists';
@@ -3171,13 +3546,27 @@ export function FirstPersonWorld({
               // Only deal damage if WE fired the projectile (we own it locally)
               if (auth.currentUser) {
                 // Determine damage
-                const dmg = p.isNitz ? 15 + (progressRef.current.phase * 5) : 40;
+                const dmg = p.isNitz ? 15 + (progressRef.current.phase * 5) : (p.damage || 40);
                 
                 // Dispatch async damage to Firebase
                 const enemyRef = doc(db, 'users', pm.id);
                 updateDoc(enemyRef, {
                   hp: increment(-dmg)
                 }).catch(err => console.error("Error applying PvP damage:", err));
+
+                if (p.isGrimoireSplash) {
+                  // Splash other PvP players nearby
+                  peerMeshes.forEach(otherPm => {
+                    if (otherPm.id === pm.id) return;
+                    const splashDist = otherPm.mesh.position.distanceTo(p.mesh.position);
+                    if (splashDist < 3.0) {
+                      const otherEnemyRef = doc(db, 'users', otherPm.id);
+                      updateDoc(otherEnemyRef, {
+                        hp: increment(-dmg)
+                      }).catch(err => {});
+                    }
+                  });
+                }
               }
             }
           });
@@ -3501,17 +3890,19 @@ export function FirstPersonWorld({
         const col = colorsDict[peer.dominantEmotion] || 0xffffff;
 
         if (!pm) {
-          // Render peer as a gorgeous floating octahedron
-          const peerGeo = new THREE.OctahedronGeometry(0.8, 0);
-          const peerMat = new THREE.MeshStandardMaterial({
-            color: col,
-            emissive: col,
-            emissiveIntensity: 0.5,
-            roughness: 0.1,
-            metalness: 0.8
-          });
-          const mesh = new THREE.Mesh(peerGeo, peerMat);
-          mesh.position.set(peer.posX || 0, 1.2, peer.posZ || 0);
+          // Render peer as a gorgeous stylized humanoid avatar
+          const mesh = createDetailedPlayerAvatar(
+            peer.avatar || {
+              name: peer.activeNitzName || 'Nitz de Origen',
+              accessory: 'none',
+              auraType: 'none',
+              colorTheme: 'classic',
+              clothing: 'none'
+            },
+            peer.dominantEmotion,
+            peer.phase || 1
+          );
+          mesh.position.set(peer.posX || 0, 0.75, peer.posZ || 0);
           scene.add(mesh);
 
           // Render peer's companion Nitz if companionSummoned is true
@@ -3561,7 +3952,7 @@ export function FirstPersonWorld({
                 peer.phase || 1,
                 0.25
               );
-              pm.companionMesh.position.copy(pm.mesh.position).add(new THREE.Vector3(0.8, -0.2, -0.8));
+              pm.companionMesh.position.copy(pm.mesh.position).add(new THREE.Vector3(0.8, 0.25, -0.8));
               scene.add(pm.companionMesh);
             }
             pm.companionSummoned = peer.companionSummoned;
@@ -3572,17 +3963,47 @@ export function FirstPersonWorld({
         // Smoothly interpolate (lerp) peer mesh position
         const targetX = peer.posX || 0;
         const targetZ = peer.posZ || 0;
+        const prevX = pm.mesh.position.x;
+        const prevZ = pm.mesh.position.z;
         pm.mesh.position.x += (targetX - pm.mesh.position.x) * 0.15;
         pm.mesh.position.z += (targetZ - pm.mesh.position.z) * 0.15;
         
-        // Float peer vertically
-        pm.mesh.position.y = 1.2 + Math.sin(timer * 2.1 + pm.mesh.position.x) * 0.15;
+        // Float peer vertically (legs standing on ground level)
+        pm.mesh.position.y = 0.75 + Math.sin(timer * 2.1 + pm.mesh.position.x) * 0.05;
         
-        // Lerp/apply facing angle
-        if (peer.facingAngle !== undefined) {
-          pm.mesh.rotation.y = peer.facingAngle;
+        // swing arms/legs if moving
+        const distMoved = Math.sqrt((pm.mesh.position.x - prevX) ** 2 + (pm.mesh.position.z - prevZ) ** 2);
+        const isMoving = distMoved > 0.008;
+        const leftArm = pm.mesh.getObjectByName('leftArm');
+        const rightArm = pm.mesh.getObjectByName('rightArm');
+        const leftLeg = pm.mesh.getObjectByName('leftLeg');
+        const rightLeg = pm.mesh.getObjectByName('rightLeg');
+
+        if (isMoving) {
+          const swing = Math.sin(timer * 8);
+          if (leftArm) leftArm.rotation.x = swing * 0.6;
+          if (rightArm) rightArm.rotation.x = -swing * 0.6;
+          if (leftLeg) leftLeg.rotation.x = -swing * 0.5;
+          if (rightLeg) rightLeg.rotation.x = swing * 0.5;
+          
+          // Face moving direction
+          const deltaX = targetX - prevX;
+          const deltaZ = targetZ - prevZ;
+          if (Math.abs(deltaX) > 0.005 || Math.abs(deltaZ) > 0.005) {
+            pm.mesh.rotation.y = Math.atan2(deltaX, deltaZ);
+          }
         } else {
-          pm.mesh.rotation.y += 0.02;
+          if (leftArm) leftArm.rotation.x = 0;
+          if (rightArm) rightArm.rotation.x = 0;
+          if (leftLeg) leftLeg.rotation.x = 0;
+          if (rightLeg) rightLeg.rotation.x = 0;
+          
+          // Apply facing angle if idle
+          if (peer.facingAngle !== undefined) {
+            pm.mesh.rotation.y = peer.facingAngle;
+          } else {
+            pm.mesh.rotation.y += 0.02;
+          }
         }
 
         // Animate peer companion follow behavior trailing behind the peer mesh
@@ -3778,6 +4199,82 @@ export function FirstPersonWorld({
         }
       }
 
+      // --- SPATIAL VOICE CHAT SIMULATION TICK ---
+      try {
+        const audioCtx = getVoiceAudioCtx();
+        const currentPeers = onlinePlayersRef.current.filter(p => p.currentMap === currentMap);
+        
+        // Remove voice oscillators for peers that are no longer here or not speaking
+        peerVoiceOscillatorsRef.current.forEach((vo, peerId) => {
+          const peer = currentPeers.find(p => p.id === peerId);
+          if (!peer || !peer.isSpeaking) {
+            try {
+              vo.osc.stop();
+              vo.osc.disconnect();
+            } catch (_) {}
+            peerVoiceOscillatorsRef.current.delete(peerId);
+          }
+        });
+
+        // Add or update voice oscillators for speaking peers
+        currentPeers.forEach(peer => {
+          if (!peer.isSpeaking) return;
+          const pm = peerMeshes.find(p => p.id === peer.id);
+          if (!pm) return;
+
+          const dist = camera.position.distanceTo(pm.mesh.position);
+          const maxDist = 20;
+
+          if (dist < maxDist) {
+            let vo = peerVoiceOscillatorsRef.current.get(peer.id);
+            if (!vo) {
+              const osc = audioCtx.createOscillator();
+              const panner = audioCtx.createStereoPanner();
+              const gain = audioCtx.createGain();
+
+              osc.type = 'triangle';
+              osc.frequency.setValueAtTime(140 + Math.random() * 80, audioCtx.currentTime);
+
+              const lfo = audioCtx.createOscillator();
+              lfo.frequency.setValueAtTime(4 + Math.random() * 2, audioCtx.currentTime);
+              const lfoGain = audioCtx.createGain();
+              lfoGain.gain.setValueAtTime(0.04, audioCtx.currentTime);
+
+              lfo.connect(lfoGain);
+              lfoGain.connect(gain.gain);
+              lfo.start();
+
+              osc.connect(panner);
+              panner.connect(gain);
+              gain.connect(audioCtx.destination);
+
+              osc.start();
+              vo = { osc, panner, gain };
+              peerVoiceOscillatorsRef.current.set(peer.id, vo);
+            }
+
+            // Update Panning
+            const toPeer = new THREE.Vector3().subVectors(pm.mesh.position, camera.position).normalize();
+            const cameraRight = new THREE.Vector3(1, 0, 0).applyQuaternion(camera.quaternion).normalize();
+            const panVal = Math.max(-1, Math.min(1, toPeer.dot(cameraRight)));
+            vo.panner.pan.setValueAtTime(panVal, audioCtx.currentTime);
+
+            // Update Volume/Gain (Linear distance attenuation)
+            const volume = Math.max(0, 1 - (dist / maxDist));
+            vo.gain.gain.setValueAtTime(volume * 0.12, audioCtx.currentTime);
+          } else {
+            const vo = peerVoiceOscillatorsRef.current.get(peer.id);
+            if (vo) {
+              try {
+                vo.osc.stop();
+                vo.osc.disconnect();
+              } catch (_) {}
+              peerVoiceOscillatorsRef.current.delete(peer.id);
+            }
+          }
+        });
+      } catch (_) {}
+
       renderer.render(scene, camera);
     };
 
@@ -3797,6 +4294,15 @@ export function FirstPersonWorld({
     ob.observe(mountRef.current);
 
     return () => {
+      // Stop and clean up all spatial voice chat oscillators
+      peerVoiceOscillatorsRef.current.forEach(vo => {
+        try {
+          vo.osc.stop();
+          vo.osc.disconnect();
+        } catch (_) {}
+      });
+      peerVoiceOscillatorsRef.current.clear();
+
       activeMeshesRef.current = [];
       cancelAnimationFrame(animId);
       ob.disconnect();
@@ -4058,6 +4564,10 @@ export function FirstPersonWorld({
       setActiveOverlay('workbench');
     } else if (nearNode.type === 'refiner') {
       setActiveOverlay('refiner');
+    } else if (nearNode.type === 'wardrobe_mirror') {
+      setActiveOverlay('avatar_customize');
+    } else if (nearNode.type === 'wardrobe_armory') {
+      setActiveOverlay('armory');
     } else if (nearNode.type === 'bookshelf') {
       setActiveOverlay('codex');
     } else if (nearNode.type === 'nitz_npc') {
@@ -5136,133 +5646,147 @@ export function FirstPersonWorld({
             exit={{ opacity: 0, scale: 0.98 }}
             className="absolute inset-0 z-40 bg-black/90 p-4 md:p-8 overflow-y-auto flex flex-col justify-center items-center"
           >
-            
-            {/* Header control inside overlay */}
-            <div className="w-full max-w-5xl flex justify-between items-center bg-[#151726] border-b border-white/15 px-6 py-4.5 rounded-t-xl shadow-xl">
-              <div className="flex items-center gap-2">
-                <Sparkles className="w-5 h-5 text-tertiary animate-pulse" />
-                <span className="text-white text-sm font-semibold tracking-wide uppercase font-headline-md">
-                  {activeOverlay === 'syntonia' && '🎼 Teclado de Sintonía Armónica Reciproco'}
-                  {activeOverlay === 'crafting' && '🔨 Forja y Herrería de Elementos Tacticos'}
-                  {activeOverlay === 'codex' && '📖 Gran Compendio y Códice de Arquetipos'}
-                  {activeOverlay === 'arena' && '⚔️ Arena de Combate vs Nitz Korrumpido'}
-                  {activeOverlay === 'interactive_pet_chat' && '🐾 Panel de Cuidados & Comunicación Holística de Nitz'}
-                  {activeOverlay === 'marketplace' && '⚖️ Gran Mercado Astral Global'}
-                  {activeOverlay === 'stash' && '📦 Baúl de Almacenamiento Fuerte'}
-                  {activeOverlay === 'refiner' && '🔥 Refinería de Recursos Estelares'}
-                </span>
-              </div>
-              <button
-                onClick={() => setActiveOverlay('none')}
-                className="bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-xs px-4 py-1.5 rounded-lg font-bold uppercase transition-all"
-              >
-                Cerrar Estación X
-              </button>
-            </div>
+            {activeOverlay === 'avatar_customize' ? (
+              <AvatarCustomizeUI 
+                progress={progress}
+                onSaveProgress={onSaveProgress}
+                onClose={() => setActiveOverlay('none')}
+              />
+            ) : activeOverlay === 'armory' ? (
+              <ArmoryUI 
+                progress={progress}
+                onSaveProgress={onSaveProgress}
+                onClose={() => setActiveOverlay('none')}
+              />
+            ) : (
+              <>
+                {/* Header control inside overlay */}
+                <div className="w-full max-w-5xl flex justify-between items-center bg-[#151726] border-b border-white/15 px-6 py-4.5 rounded-t-xl shadow-xl">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="w-5 h-5 text-tertiary animate-pulse" />
+                    <span className="text-white text-sm font-semibold tracking-wide uppercase font-headline-md">
+                      {activeOverlay === 'syntonia' && '🎼 Teclado de Sintonía Armónica Reciproco'}
+                      {activeOverlay === 'crafting' && '🔨 Forja y Herrería de Elementos Tacticos'}
+                      {activeOverlay === 'codex' && '📖 Gran Compendio y Códice de Arquetipos'}
+                      {activeOverlay === 'arena' && '⚔️ Arena de Combate vs Nitz Korrumpido'}
+                      {activeOverlay === 'interactive_pet_chat' && '🐾 Panel de Cuidados & Comunicación Holística de Nitz'}
+                      {activeOverlay === 'marketplace' && '⚖️ Gran Mercado Astral Global'}
+                      {activeOverlay === 'stash' && '📦 Baúl de Almacenamiento Fuerte'}
+                      {activeOverlay === 'refiner' && '🔥 Refinería de Recursos Estelares'}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setActiveOverlay('none')}
+                    className="bg-red-500/10 hover:bg-red-500/25 text-red-400 border border-red-500/30 text-xs px-4 py-1.5 rounded-lg font-bold uppercase transition-all"
+                  >
+                    Cerrar Estación X
+                  </button>
+                </div>
 
-            {/* Content overlay routers */}
-            <div className="w-full max-w-5xl bg-[#0d0e1b] border-x border-b border-white/10 rounded-b-xl px-4 py-6 md:px-8 shadow-2xl relative min-h-[550px]">
-              
-              {activeOverlay === 'syntonia' && (
-                <Minigame 
-                  onReward={(woodDiff, stoneDiff) => {
-                    const nextWood = progress.inventory.wood.common + (woodDiff * 2);
-                    const nextStone = progress.inventory.stone.common + stoneDiff;
-                    onSaveProgress({
-                      ...progress,
-                      inventory: {
-                        ...progress.inventory,
-                        wood: { ...progress.inventory.wood, common: nextWood },
-                        stone: { ...progress.inventory.stone, common: nextStone }
-                      }
-                    });
-                    triggerNotification(`🎁 Recolectas +${woodDiff * 2} maderas y +${stoneDiff} piedras en Sintonía`);
-                  }}
-                  onEmotionBoost={(emotion, extraPoints) => {
-                    onUpdateEmotions(prev => ({
-                      ...prev,
-                      [emotion]: Math.min(100, (prev[emotion] || 10) + extraPoints)
-                    }));
-                  }}
-                />
-              )}
+                {/* Content overlay routers */}
+                <div className="w-full max-w-5xl bg-[#0d0e1b] border-x border-b border-white/10 rounded-b-xl px-4 py-6 md:px-8 shadow-2xl relative min-h-[550px]">
+                  
+                  {activeOverlay === 'syntonia' && (
+                    <Minigame 
+                      onReward={(woodDiff, stoneDiff) => {
+                        const nextWood = progress.inventory.wood.common + (woodDiff * 2);
+                        const nextStone = progress.inventory.stone.common + stoneDiff;
+                        onSaveProgress({
+                          ...progress,
+                          inventory: {
+                            ...progress.inventory,
+                            wood: { ...progress.inventory.wood, common: nextWood },
+                            stone: { ...progress.inventory.stone, common: nextStone }
+                          }
+                        });
+                        triggerNotification(`🎁 Recolectas +${woodDiff * 2} maderas y +${stoneDiff} piedras en Sintonía`);
+                      }}
+                      onEmotionBoost={(emotion, extraPoints) => {
+                        onUpdateEmotions(prev => ({
+                          ...prev,
+                          [emotion]: Math.min(100, (prev[emotion] || 10) + extraPoints)
+                        }));
+                      }}
+                    />
+                  )}
 
-              {activeOverlay === 'crafting' && (
-                <Crafting 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                />
-              )}
+                  {activeOverlay === 'crafting' && (
+                    <Crafting 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                    />
+                  )}
 
-              {activeOverlay === 'codex' && (
-                <Codex 
-                  unlockedArchetypes={progress.unlockedArchetypes}
-                  currentDominant={currentDominant.name}
-                />
-              )}
+                  {activeOverlay === 'codex' && (
+                    <Codex 
+                      unlockedArchetypes={progress.unlockedArchetypes}
+                      currentDominant={currentDominant.name}
+                    />
+                  )}
 
-              {activeOverlay === 'marketplace' && (
-                <Marketplace 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                  onClose={() => setActiveOverlay('none')}
-                />
-              )}
+                  {activeOverlay === 'marketplace' && (
+                    <Marketplace 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={() => setActiveOverlay('none')}
+                    />
+                  )}
 
-              {activeOverlay === 'stash' && (
-                <StashUI 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                  onClose={() => setActiveOverlay('none')}
-                  tempBag={tempBag}
-                  setTempBag={setTempBag}
-                />
-              )}
+                  {activeOverlay === 'stash' && (
+                    <StashUI 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={() => setActiveOverlay('none')}
+                      tempBag={tempBag}
+                      setTempBag={setTempBag}
+                    />
+                  )}
 
-              {activeOverlay === 'workbench' && (
-                <WorkbenchUI 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                  onClose={() => setActiveOverlay('none')}
-                  type={activeWorkbenchType}
-                />
-              )}
+                  {activeOverlay === 'workbench' && (
+                    <WorkbenchUI 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={() => setActiveOverlay('none')}
+                      type={activeWorkbenchType}
+                    />
+                  )}
 
-              {activeOverlay === 'refiner' && (
-                <RefinerUI 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                  onClose={() => setActiveOverlay('none')}
-                />
-              )}
+                  {activeOverlay === 'refiner' && (
+                    <RefinerUI 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={() => setActiveOverlay('none')}
+                    />
+                  )}
 
-              {activeOverlay === 'arena' && (
-                <BattleArena 
-                  progress={progress}
-                  onSaveProgress={onSaveProgress}
-                  onDefeat={handleDefeatInArena}
-                />
-              )}
+                  {activeOverlay === 'arena' && (
+                    <BattleArena 
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onDefeat={handleDefeatInArena}
+                    />
+                  )}
 
-              {activeOverlay === 'interactive_pet_chat' && (
-                <MyHome 
-                  playerProgress={progress}
-                  onUpdateEmotions={onUpdateEmotions}
-                  onEvolve={onEvolve}
-                  onSpendGold={onSpendGold}
-                  onOpenVoice={() => setActiveOverlay('gemini_voice')}
-                />
-              )}
+                  {activeOverlay === 'interactive_pet_chat' && (
+                    <MyHome 
+                      playerProgress={progress}
+                      onUpdateEmotions={onUpdateEmotions}
+                      onEvolve={onEvolve}
+                      onSpendGold={onSpendGold}
+                      onOpenVoice={() => setActiveOverlay('gemini_voice')}
+                    />
+                  )}
 
-              {activeOverlay === 'gemini_voice' && (
-                <GeminiLiveChat 
-                  progress={progress}
-                  onClose={() => setActiveOverlay('interactive_pet_chat')}
-                />
-              )}
+                  {activeOverlay === 'gemini_voice' && (
+                    <GeminiLiveChat 
+                      progress={progress}
+                      onClose={() => setActiveOverlay('interactive_pet_chat')}
+                    />
+                  )}
 
-            </div>
-
+                </div>
+              </>
+            )}
           </motion.div>
         )}
       </AnimatePresence>
