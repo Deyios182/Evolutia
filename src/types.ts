@@ -33,14 +33,16 @@ export interface GatheringInventory {
 export interface CraftableItem {
   id: string;
   name: string;
-  type: 'furniture' | 'equipment';
-  subType?: 'weapon_1h' | 'weapon_2h' | 'ranged' | 'shield' | 'grimoire' | 'head' | 'chest' | 'legs' | 'neck' | 'ring' | 'backpack';
+  type: 'furniture' | 'equipment' | 'material' | 'tool';
+  subType?: 'weapon_1h' | 'weapon_2h' | 'ranged' | 'shield' | 'grimoire' | 'head' | 'chest' | 'legs' | 'neck' | 'ring' | 'backpack' | 'axe' | 'pickaxe' | 'refined_wood' | 'refined_metal' | 'refined_stone' | 'refined_essence';
   rarity: 'common' | 'rare' | 'epic' | 'legendary';
   statBonus?: string; // Example: "HP+50" or "DMG+15"
   weightCapacity?: number; // For backpacks, defines max carrying capacity
   weight?: number; // Physical weight of the item
   placed?: boolean;
   equipped?: boolean;
+  tier?: number; // Tier level of resource or tool (1 to 4)
+  quantity?: number; // Stack quantity for refined materials
 }
 
 export interface EquipmentSlots {
@@ -53,6 +55,8 @@ export interface EquipmentSlots {
   mainHand?: CraftableItem | null;
   offHand?: CraftableItem | null;
   backpack?: CraftableItem | null;
+  axe?: CraftableItem | null;
+  pickaxe?: CraftableItem | null;
 }
 
 export interface StashSlot {
@@ -95,6 +99,21 @@ export interface PlayerProgress {
   workbenchForgeLevel?: number;
   workbenchWeaverLevel?: number;
   workbenchEnchanterLevel?: number;
+  // Albion additions
+  refiningLevel?: number;
+  refiningExp?: number;
+  weaponMastery?: {
+    sword?: number;
+    ranged?: number;
+    grimoire?: number;
+    fists?: number;
+  };
+  weaponMasteryExp?: {
+    sword?: number;
+    ranged?: number;
+    grimoire?: number;
+    fists?: number;
+  };
 }
 
 export interface MarketplaceItem {

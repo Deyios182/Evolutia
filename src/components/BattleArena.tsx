@@ -173,6 +173,24 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
       setActiveTonic(false);
     }
 
+    // Calculate Weapon Mastery Multiplier (+5% per mastery level above 1)
+    const getWeaponMasteryMultiplier = () => {
+      const wm = progress.weaponMastery || {};
+      const subType = activeWeapon?.subType;
+      let lvl = 1;
+      if (subType === 'weapon_1h' || subType === 'weapon_2h' || subType === 'weapon') {
+        lvl = wm.sword || 1;
+      } else if (subType === 'ranged') {
+        lvl = wm.ranged || 1;
+      } else if (subType === 'grimoire') {
+        lvl = wm.grimoire || 1;
+      } else {
+        lvl = wm.fists || 1;
+      }
+      return 1.0 + (lvl - 1) * 0.05;
+    };
+    const masteryMult = getWeaponMasteryMultiplier();
+
     const roundLogs: string[] = [`--- RONDA ${round} ---`];
 
     // ====== FASE 1: ATAQUE DEL JUGADOR ======
@@ -185,18 +203,18 @@ export const BattleArena: React.FC<BattleArenaProps> = ({ progress, onSaveProgre
       const isEpic = activeWeapon?.name.includes('Mandoble');
       
       if (isLegendary) {
-        playerDmg = Math.floor((65 + progress.phase * 15) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        playerDmg = Math.floor((65 + progress.phase * 15) * dmgMult * (isAmplified ? 2.0 : 1.0) * masteryMult);
         setEnemyBurnTicks(2);
         playerLog = `⚔️ [IRA SOLAR]: Blandes Sable del Alba Legendario infligiendo ${playerDmg} de daño directo e impregnando quemadura solar (2 turnos).`;
         triggerAudioTone(660, 'sawtooth', 0.5);
         setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#f59e0b' }]);
       } else if (isEpic) {
-        playerDmg = Math.floor((50 + progress.phase * 12) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        playerDmg = Math.floor((50 + progress.phase * 12) * dmgMult * (isAmplified ? 2.0 : 1.0) * masteryMult);
         playerLog = `⚔️ [TAJO SOMBRÍO]: Blandes Mandoble de Bruma Astral infligiendo ${playerDmg} de daño y desgarrando barreras del oponente.`;
         triggerAudioTone(440, 'triangle', 0.5);
         setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#c084fc' }]);
       } else {
-        playerDmg = Math.floor((38 + progress.phase * 8) * dmgMult * (isAmplified ? 2.0 : 1.0));
+        playerDmg = Math.floor((38 + progress.phase * 8) * dmgMult * (isAmplified ? 2.0 : 1.0) * masteryMult);
         playerLog = `⚔️ [CORTE RÁPIDO]: Blandes Espada de Novicio infligiendo ${playerDmg} de daño continuo.`;
         triggerAudioTone(220, 'sawtooth', 0.45);
         setActiveFlashes(prev => [...prev, { x: 360, y: 150, text: `-${playerDmg}!`, color: '#f87171' }]);

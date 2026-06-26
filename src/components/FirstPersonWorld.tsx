@@ -712,6 +712,7 @@ import { Crafting } from './Crafting';
 import { Vecindario } from './Vecindario';
 import { StashUI } from './StashUI';
 import { WorkbenchUI } from './WorkbenchUI';
+import { RefinerUI } from './RefinerUI';
 import { GeminiLiveChat } from './GeminiLiveChat';
 
 interface FirstPersonWorldProps {
@@ -821,7 +822,7 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice';
+  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner';
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
 
@@ -1025,7 +1026,7 @@ export function FirstPersonWorld({
 
   // Action RPG States
   const [showQuickInventory, setShowQuickInventory] = useState<boolean>(false);
-  const [selectedDollSlot, setSelectedDollSlot] = useState<'mainHand' | 'offHand' | 'chest' | 'legs' | 'head' | null>(null);
+  const [selectedDollSlot, setSelectedDollSlot] = useState<'mainHand' | 'offHand' | 'chest' | 'legs' | 'head' | 'backpack' | 'axe' | 'pickaxe' | null>(null);
   const [dashCooldownLeft, setDashCooldownLeft] = useState<number>(0);
   const dashCooldownLeftRef = useRef<number>(0);
   const [skillCooldownLeft, setSkillCooldownLeft] = useState<number>(0);
@@ -1049,6 +1050,10 @@ export function FirstPersonWorld({
         belongsToCategory = ci.subType === 'head';
       } else if (slot === 'backpack') {
         belongsToCategory = ci.subType === 'backpack';
+      } else if (slot === 'axe') {
+        belongsToCategory = ci.subType === 'axe';
+      } else if (slot === 'pickaxe') {
+        belongsToCategory = ci.subType === 'pickaxe';
       }
 
       if (belongsToCategory) {
@@ -1094,8 +1099,164 @@ export function FirstPersonWorld({
       }).catch(err => console.error("Error updating equipment in DB:", err));
     }
 
-    triggerNotification(item ? `🛡️ Te has equipado: ${item.name}` : `🛡️ Has desequipado la ranura ${slot.toUpperCase()}`);
+  // Calculate Weapon Mastery Multiplier (+5% per mastery level above 1)
+  const getWeaponMasteryMultiplier = (wepSubType: string | undefined): number => {
+    const wm = progressRef.current.weaponMastery || {};
+    let lvl = 1;
+    if (wepSubType === 'weapon_1h' || wepSubType === 'weapon_2h' || wepSubType === 'weapon') {
+      lvl = wm.sword || 1;
+    } else if (wepSubType === 'ranged') {
+      lvl = wm.ranged || 1;
+    } else if (wepSubType === 'grimoire') {
+      lvl = wm.grimoire || 1;
+    } else {
+      lvl = wm.fists || 1;
+    }
+    return 1.0 + (lvl - 1) * 0.05;
   };
+
+  // Add Weapon Mastery Experience
+  const addWeaponMasteryExp = (wepType: 'sword' | 'ranged' | 'grimoire' | 'fists', expGained: number) => {
+    const currentProgress = progressRef.current;
+    const wm = {
+      sword: 1,
+      ranged: 1,
+      grimoire: 1,
+      fists: 1,
+      ...(currentProgress.weaponMastery || {})
+    };
+    const wmExp = {
+      sword: 0,
+      ranged: 0,
+      grimoire: 0,
+      fists: 0,
+      ...(currentProgress.weaponMasteryExp || {})
+    };
+
+    let currentLvl = wm[wepType] || 1;
+    let currentExp = wmExp[wepType] || 0;
+    
+    currentExp += expGained;
+    
+    const expThreshold = 500;
+    let leveledUp = false;
+    while (currentExp >= expThreshold) {
+      currentExp -= expThreshold;
+      currentLvl += 1;
+      leveledUp = true;
+    }
+
+    const nextWm = { ...wm, [wepType]: currentLvl };
+    const nextWmExp = { ...wmExp, [wepType]: currentExp };
+
+    const updatedProg = {
+      ...currentProgress,
+      weaponMastery: nextWm,
+      weaponMasteryExp: nextWmExp
+    };
+
+    onSaveProgressRef.current(updatedProg);
+    if (auth.currentUser) {
+      const userRef = doc(db, 'users', auth.currentUser.uid);
+      updateDoc(userRef, {
+        weaponMastery: nextWm,
+        weaponMasteryExp: nextWmExp
+      }).catch(err => console.error("Error updating weapon mastery in DB:", err));
+    }
+    
+    if (leveledUp) {
+      triggerNotification(`🎉 ¡Nivel de Maestría subido para ${wepType.toUpperCase()}! Nuevo Nivel: ${currentLvl}`);
+    }
+  };
+
+  // Inject testing kit (T1-T4 tools, raw resources, refined resources)
+  useEffect(() => {
+    const alreadyApplied = (progress.craftedItems || []).some(item => item.id.includes('t_axe4_test'));
+    if (!alreadyApplied) {
+      const testingTools: CraftableItem[] = [
+        { id: `t_axe1_test_${Date.now()}`, name: 'Hacha de Novicio (T1)', type: 'tool', subType: 'axe', rarity: 'common', tier: 1, weight: 2, equipped: false },
+        { id: `t_pick1_test_${Date.now()}`, name: 'Pico de Novicio (T1)', type: 'tool', subType: 'pickaxe', rarity: 'common', tier: 1, weight: 2, equipped: false },
+        { id: `t_axe2_test_${Date.now()}`, name: 'Hacha de Cobre (T2)', type: 'tool', subType: 'axe', rarity: 'rare', tier: 2, weight: 2, equipped: false },
+        { id: `t_pick2_test_${Date.now()}`, name: 'Pico de Cobre (T2)', type: 'tool', subType: 'pickaxe', rarity: 'rare', tier: 2, weight: 2, equipped: false },
+        { id: `t_axe3_test_${Date.now()}`, name: 'Hacha de Hierro (T3)', type: 'tool', subType: 'axe', rarity: 'epic', tier: 3, weight: 3, equipped: false },
+        { id: `t_pick3_test_${Date.now()}`, name: 'Pico de Hierro (T3)', type: 'tool', subType: 'pickaxe', rarity: 'epic', tier: 3, weight: 3, equipped: false },
+        { id: `t_axe4_test_${Date.now()}`, name: 'Hacha de Titanio (T4)', type: 'tool', subType: 'axe', rarity: 'legendary', tier: 4, weight: 4, equipped: false },
+        { id: `t_pick4_test_${Date.now()}`, name: 'Pico de Titanio (T4)', type: 'tool', subType: 'pickaxe', rarity: 'legendary', tier: 4, weight: 4, equipped: false },
+      ];
+
+      let newGrid = [...(progress.stashGrid || [])];
+      while (newGrid.length < 40) {
+        newGrid.push(null);
+      }
+
+      const rawCategories = ['wood', 'stone', 'metal'] as const;
+      const rarities = ['common', 'rare', 'epic', 'legendary'] as const;
+      let slotIdx = 0;
+
+      rawCategories.forEach(cat => {
+        rarities.forEach(rar => {
+          while (slotIdx < newGrid.length && newGrid[slotIdx] !== null) {
+            slotIdx++;
+          }
+          if (slotIdx < newGrid.length) {
+            newGrid[slotIdx] = {
+              id: `test_raw_${cat}_${rar}_${Date.now()}_${Math.random()}`,
+              type: 'material',
+              materialCategory: cat,
+              materialRarity: rar,
+              quantity: 99
+            };
+          }
+        });
+      });
+
+      const refinedList = [
+        { name: 'Tablón de Pino Refinado', subType: 'refined_wood' as const, rarity: 'common' as const, tier: 1 },
+        { name: 'Tablón de Abedul Refinado', subType: 'refined_wood' as const, rarity: 'rare' as const, tier: 2 },
+        { name: 'Tablón de Castaño Refinado', subType: 'refined_wood' as const, rarity: 'epic' as const, tier: 3 },
+        { name: 'Tablón de Cedro Refinado', subType: 'refined_wood' as const, rarity: 'legendary' as const, tier: 4 },
+        { name: 'Lingote de Cobre Refinado', subType: 'refined_metal' as const, rarity: 'rare' as const, tier: 2 },
+        { name: 'Lingote de Hierro Refinado', subType: 'refined_metal' as const, rarity: 'epic' as const, tier: 3 },
+        { name: 'Lingote de Titanio Refinado', subType: 'refined_metal' as const, rarity: 'legendary' as const, tier: 4 },
+        { name: 'Bloque de Piedra Refinado', subType: 'refined_stone' as const, rarity: 'common' as const, tier: 1 },
+        { name: 'Bloque de Granito Refinado', subType: 'refined_stone' as const, rarity: 'rare' as const, tier: 2 },
+        { name: 'Bloque de Pizarra Refinado', subType: 'refined_stone' as const, rarity: 'epic' as const, tier: 3 },
+        { name: 'Bloque de Mármol Refinado', subType: 'refined_stone' as const, rarity: 'legendary' as const, tier: 4 },
+      ];
+
+      const refinedCrafted: CraftableItem[] = refinedList.map(ref => ({
+        id: `test_ref_${ref.subType}_t${ref.tier}_${Date.now()}_${Math.random()}`,
+        name: ref.name,
+        type: 'material',
+        subType: ref.subType,
+        rarity: ref.rarity,
+        tier: ref.tier,
+        quantity: 50
+      }));
+
+      const updatedCraftedList = [
+        ...(progress.craftedItems || []),
+        ...testingTools,
+        ...refinedCrafted
+      ];
+
+      const nextProg = {
+        ...progress,
+        craftedItems: updatedCraftedList,
+        stashGrid: newGrid
+      };
+
+      onSaveProgress(nextProg);
+      if (auth.currentUser) {
+        const userRef = doc(db, 'users', auth.currentUser.uid);
+        updateDoc(userRef, {
+          craftedItems: updatedCraftedList,
+          stashGrid: newGrid
+        }).catch(err => console.error("Error applying testing kit in DB:", err));
+      }
+      triggerNotification("🎁 Kit de Pruebas Inyectado: ¡Todas las herramientas y materiales en tu inventario!");
+    }
+  }, [progress.craftedItems]);
 
   // Evade Dash trigger
   const triggerEvadeDash = () => {
@@ -1142,8 +1303,8 @@ export function FirstPersonWorld({
       keysRef.current[k] = true;
       setKeys({ ...keysDownRef.current });
 
-      // Action RPG Dodge (V key)
-      if (k === 'v') {
+      // Action RPG Dodge (Shift key)
+      if (k === 'shift') {
         e.preventDefault();
         if (dashCooldownLeftRef.current <= 0 && !isDodgingRef.current && activeOverlayRef.current === 'none') {
           triggerEvadeDash();
@@ -1186,8 +1347,8 @@ export function FirstPersonWorld({
         triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
       }
 
-      // If user presses G, activate proximity voice chat
-      if ((e.key === 'g' || e.key === 'G') && activeOverlayRef.current === 'none') {
+      // If user presses V, activate proximity voice chat
+      if ((e.key === 'v' || e.key === 'V') && activeOverlayRef.current === 'none') {
         setIsProximityChatActive(true);
       }
     };
@@ -1198,7 +1359,7 @@ export function FirstPersonWorld({
       keysRef.current[k] = false;
       setKeys({ ...keysDownRef.current });
 
-      if (e.key === 'g' || e.key === 'G') {
+      if (e.key === 'v' || e.key === 'V') {
         setIsProximityChatActive(false);
       }
     };
@@ -1336,7 +1497,8 @@ export function FirstPersonWorld({
         // Nuevos Bancos de Trabajo Modulares (Arc Raiders style)
         { id: 'workbench_forge', name: 'Herrería de Combate Pesado', x: 5, z: -3, type: 'forge', label: '⚒️ Fabricar Armas y Blindaje' },
         { id: 'workbench_weaver', name: 'Telar de Supervivencia', x: -5, z: -3, type: 'weaver', label: '🧵 Fabricar Mochilas y Tela' },
-        { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter', label: '🔮 Fabricar Grimorios y Joyas' }
+        { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter', label: '🔮 Fabricar Grimorios y Joyas' },
+        { id: 'workbench_refiner', name: 'Refinería de Recursos Estelares', x: 2.5, z: -4.5, type: 'refiner', label: '🔥 Refinar Madera, Metal y Piedra' }
       ];
       setPlayerX(0);
       setPlayerZ(4);
@@ -2098,10 +2260,32 @@ export function FirstPersonWorld({
         
         enchGroup.userData = { floatingCrystal };
 
-        enchGroup.position.set(node.x, 0, node.z);
-        enchGroup.name = node.id;
-        scene.add(enchGroup);
-        activeMeshes.push(enchGroup);
+      } else if (node.type === 'refiner') {
+        const refinerGroup = new THREE.Group();
+        const baseGeo = new THREE.CylinderGeometry(0.9, 1.1, 1.2, 8);
+        const stoneMat = new THREE.MeshStandardMaterial({ color: 0x4b5563, roughness: 0.9 });
+        const base = new THREE.Mesh(baseGeo, stoneMat);
+        base.position.y = 0.6;
+        refinerGroup.add(base);
+
+        const funnelGeo = new THREE.CylinderGeometry(0.7, 0.4, 0.6, 8, 1, true);
+        const ironMat = new THREE.MeshStandardMaterial({ color: 0x1f2937, metalness: 0.8, roughness: 0.4 });
+        const funnel = new THREE.Mesh(funnelGeo, ironMat);
+        funnel.position.y = 1.3;
+        refinerGroup.add(funnel);
+
+        const flameGeo = new THREE.SphereGeometry(0.3, 16, 16);
+        const flameMat = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+        const flame = new THREE.Mesh(flameGeo, flameMat);
+        flame.position.set(0, 1.5, 0);
+        refinerGroup.add(flame);
+
+        refinerGroup.userData = { flame };
+
+        refinerGroup.position.set(node.x, 0, node.z);
+        refinerGroup.name = node.id;
+        scene.add(refinerGroup);
+        activeMeshes.push(refinerGroup);
         return;
       } else if (node.type === 'marketplace') {
         const martGroup = new THREE.Group();
@@ -2279,7 +2463,7 @@ export function FirstPersonWorld({
     mountRef.current.appendChild(renderer.domElement);
     rendererRef.current = renderer;
 
-    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean; isNebulaPulse?: boolean }[] = [];
+    const activeProjectiles: { mesh: THREE.Mesh; vx: number; vy: number; vz: number; life: number; isNitz: boolean; isNebulaPulse?: boolean; isSpecial?: boolean; damage?: number }[] = [];
     let lastNitzAttack = 0;
 
     const activeEnemies: LocalEnemy[] = [];
@@ -2319,6 +2503,19 @@ export function FirstPersonWorld({
       enemy.isDead = true;
       enemy.respawnTimer = 0;
       enemy.mesh.visible = false;
+
+      if (isPlayerProjectile) {
+        const activeWep = progressRef.current.equipment?.mainHand?.subType;
+        let wepType: 'sword' | 'ranged' | 'grimoire' | 'fists' = 'fists';
+        if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h' || activeWep === 'weapon') {
+          wepType = 'sword';
+        } else if (activeWep === 'ranged') {
+          wepType = 'ranged';
+        } else if (activeWep === 'grimoire') {
+          wepType = 'grimoire';
+        }
+        addWeaponMasteryExp(wepType, 100);
+      }
       
       let expGained = 15;
       let goldGained = 8;
@@ -2484,11 +2681,13 @@ export function FirstPersonWorld({
         };
         customEffects.push(spinEffect);
 
+        const masteryMult = getWeaponMasteryMultiplier(type);
         activeEnemies.forEach(enemy => {
           if (enemy.isDead) return;
           const dist = camera.position.distanceTo(enemy.mesh.position);
           if (dist <= 6.0) {
-            enemy.hp -= 50;
+            const finalDmg = Math.round(50 * masteryMult);
+            enemy.hp -= finalDmg;
             enemy.flashTimer = 0.3;
             enemy.mesh.scale.multiplyScalar(1.2);
             if (enemy.hp <= 0) {
@@ -2501,6 +2700,7 @@ export function FirstPersonWorld({
       } else if (type === 'ranged') {
         // Rifle Spread
         const angles = [-0.25, 0, 0.25];
+        const masteryMult = getWeaponMasteryMultiplier('ranged');
         angles.forEach(a => {
           const dir = new THREE.Vector3();
           camera.getWorldDirection(dir);
@@ -2519,7 +2719,9 @@ export function FirstPersonWorld({
             vy: dir.y * 45.0,
             vz: dir.z * 45.0,
             life: 80,
-            isNitz: false
+            isNitz: false,
+            isSpecial: true,
+            damage: Math.round(35 * masteryMult)
           });
         });
         triggerNotification("🔫 ¡Ráfaga de Plomo!");
@@ -2539,6 +2741,7 @@ export function FirstPersonWorld({
         pMesh.position.set(camera.position.x, camera.position.y - 0.2, camera.position.z);
         scene.add(pMesh);
 
+        const masteryMult = getWeaponMasteryMultiplier('grimoire');
         activeProjectiles.push({
           mesh: pMesh,
           vx: dir.x * 8.0,
@@ -2546,7 +2749,9 @@ export function FirstPersonWorld({
           vz: dir.z * 8.0,
           life: 90,
           isNitz: false,
-          isNebulaPulse: true
+          isNebulaPulse: true,
+          isSpecial: true,
+          damage: Math.round(50 * masteryMult)
         });
         triggerNotification("🔮 ¡Pulso de Nebulosa!");
 
@@ -2560,11 +2765,13 @@ export function FirstPersonWorld({
         playerXRef.current += dir.x * 4.0;
         playerZRef.current += dir.z * 4.0;
 
+        const masteryMult = getWeaponMasteryMultiplier('fists');
         activeEnemies.forEach(enemy => {
           if (enemy.isDead) return;
           const dist = camera.position.distanceTo(enemy.mesh.position);
           if (dist <= 4.0) {
-            enemy.hp -= 25;
+            const finalDmg = Math.round(25 * masteryMult);
+            enemy.hp -= finalDmg;
             enemy.flashTimer = 0.3;
             const knockDir = new THREE.Vector3().subVectors(enemy.mesh.position, camera.position).normalize();
             enemy.mesh.position.x += knockDir.x * 4.0;
@@ -2716,7 +2923,8 @@ export function FirstPersonWorld({
             vy: dir.y * speed,
             vz: dir.z * speed,
             life: life,
-            isNitz: false
+            isNitz: false,
+            damage: 35
           });
         }
       }
@@ -2819,6 +3027,10 @@ export function FirstPersonWorld({
           m.userData.floatingCrystal.position.y = 1.8 + Math.sin(timer * 3.0) * 0.15;
           m.userData.floatingCrystal.rotation.y += 0.035;
           m.userData.floatingCrystal.rotation.x += 0.01;
+        } else if (m.userData && m.userData.flame) {
+          m.userData.flame.position.y = 1.4 + Math.sin(timer * 4.0) * 0.08;
+          const s = 1.0 + Math.sin(timer * 10.0) * 0.15;
+          m.userData.flame.scale.set(s, s, s);
         } else if (m.name === 'road_to_lobby' || m.name.startsWith('gate_') || m.name === 'portal_arena' || m.name === 'map3_exit' || m.name === 'map2_exit' || m.name === 'map1_exit') {
           m.rotation.z += 0.01;
         }
@@ -2878,8 +3090,24 @@ export function FirstPersonWorld({
 
               // Deal damage
               const isPlayerProjectile = !p.isNitz;
-              const damageDealt = isPlayerProjectile ? 35 : (15 + progressRef.current.phase * 4);
+              let damageDealt = isPlayerProjectile ? 35 : (15 + progressRef.current.phase * 4);
+              if (isPlayerProjectile && p.damage !== undefined) {
+                damageDealt = p.damage;
+              }
               enemy.hp -= damageDealt;
+
+              if (isPlayerProjectile) {
+                const activeWep = progressRef.current.equipment?.mainHand?.subType;
+                let wepType: 'sword' | 'ranged' | 'grimoire' | 'fists' = 'fists';
+                if (activeWep === 'weapon_1h' || activeWep === 'weapon_2h' || activeWep === 'weapon') {
+                  wepType = 'sword';
+                } else if (activeWep === 'ranged') {
+                  wepType = 'ranged';
+                } else if (activeWep === 'grimoire') {
+                  wepType = 'grimoire';
+                }
+                addWeaponMasteryExp(wepType, 15);
+              }
               
               // Flash enemy red
               enemy.flashTimer = 0.3;
@@ -3825,6 +4053,8 @@ export function FirstPersonWorld({
     } else if (nearNode.type === 'enchanter') {
       setActiveWorkbenchType('enchanter');
       setActiveOverlay('workbench');
+    } else if (nearNode.type === 'refiner') {
+      setActiveOverlay('refiner');
     } else if (nearNode.type === 'bookshelf') {
       setActiveOverlay('codex');
     } else if (nearNode.type === 'nitz_npc') {
@@ -3864,6 +4094,28 @@ export function FirstPersonWorld({
     } else if (nearNode.type === 'door_arena') {
       setActiveOverlay('arena');
     } else if (nearNode.type === 'tree' || nearNode.type === 'ore') {
+      const getRarityTier = (rarity: string | undefined): number => {
+        if (rarity === 'rare') return 2;
+        if (rarity === 'epic') return 3;
+        if (rarity === 'legendary') return 4;
+        return 1;
+      };
+      
+      const nodeTier = getRarityTier(nearNode.rarity);
+      if (nearNode.type === 'tree') {
+        const axe = progress.equipment?.axe;
+        if (!axe || (axe.tier || 0) < nodeTier) {
+          triggerNotification(`⚠️ Requiere Hacha de Tier ${nodeTier} o superior equipada.`);
+          return;
+        }
+      } else if (nearNode.type === 'ore') {
+        const pickaxe = progress.equipment?.pickaxe;
+        if (!pickaxe || (pickaxe.tier || 0) < nodeTier) {
+          triggerNotification(`⚠️ Requiere Pico de Tier ${nodeTier} o superior equipado.`);
+          return;
+        }
+      }
+
       // Trigger Nitz companion strike animation in 3D
       if (progress.companionSummoned) {
         strikeNodeRef.current = nearNode;
@@ -4763,7 +5015,7 @@ export function FirstPersonWorld({
                   />
                 </svg>
                 <span className="text-[9px] font-bold text-white group-hover:scale-110 transition-transform select-none">DODGE</span>
-                <span className="absolute bottom-0 bg-[#0d0e1b] text-gray-400 border border-white/10 rounded px-1 text-[7px] font-mono select-none">V</span>
+                <span className="absolute bottom-0 bg-[#0d0e1b] text-gray-400 border border-white/10 rounded px-1 text-[7px] font-mono select-none">SHIFT</span>
               </div>
               <span className="text-[8px] font-mono text-gray-400">
                 {dashCooldownLeft > 0 ? `${dashCooldownLeft.toFixed(1)}s` : 'LISTO'}
@@ -4894,6 +5146,7 @@ export function FirstPersonWorld({
                   {activeOverlay === 'interactive_pet_chat' && '🐾 Panel de Cuidados & Comunicación Holística de Nitz'}
                   {activeOverlay === 'marketplace' && '⚖️ Gran Mercado Astral Global'}
                   {activeOverlay === 'stash' && '📦 Baúl de Almacenamiento Fuerte'}
+                  {activeOverlay === 'refiner' && '🔥 Refinería de Recursos Estelares'}
                 </span>
               </div>
               <button
@@ -4969,6 +5222,14 @@ export function FirstPersonWorld({
                   onSaveProgress={onSaveProgress}
                   onClose={() => setActiveOverlay('none')}
                   type={activeWorkbenchType}
+                />
+              )}
+
+              {activeOverlay === 'refiner' && (
+                <RefinerUI 
+                  progress={progress}
+                  onSaveProgress={onSaveProgress}
+                  onClose={() => setActiveOverlay('none')}
                 />
               )}
 
@@ -5160,6 +5421,36 @@ export function FirstPersonWorld({
                     <span className="text-yellow-500 font-bold">{progress.gold} G</span>
                   </div>
                 </div>
+
+                {/* Weapon Masteries (Albion Style) */}
+                <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Maestrías de Arma</span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">⚔️ Espada:</span>
+                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.sword || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.sword || 0}/500)</span></span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">🔫 A Distancia:</span>
+                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.ranged || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.ranged || 0}/500)</span></span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">🔮 Grimorio:</span>
+                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.grimoire || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.grimoire || 0}/500)</span></span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">👊 Puños:</span>
+                    <span className="text-amber-500 font-bold">LVL {progress.weaponMastery?.fists || 1} <span className="text-[9.5px] text-gray-600">({progress.weaponMasteryExp?.fists || 0}/500)</span></span>
+                  </div>
+                </div>
+
+                {/* Refining Mastery (Albion Style) */}
+                <div className="bg-black/20 border border-white/5 p-4 rounded-lg space-y-2 text-xs font-mono">
+                  <span className="text-[10px] text-gray-400 uppercase tracking-widest block border-b border-white/5 pb-1 font-bold">Refinación</span>
+                  <div className="flex justify-between">
+                    <span className="text-gray-500">🔥 Nivel:</span>
+                    <span className="text-amber-500 font-bold">LVL {progress.refiningLevel || 1} <span className="text-[9.5px] text-gray-600">({progress.refiningExp || 0}/{(progress.refiningLevel || 1) * 300})</span></span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -5167,7 +5458,7 @@ export function FirstPersonWorld({
             <div className="flex-1 p-6 flex flex-col items-center justify-center relative">
               <div className="absolute inset-0 opacity-10 bg-[radial-gradient(ellipse_at_center,_var(--tw-gradient-stops))] from-red-500 via-transparent to-transparent pointer-events-none" />
               
-              <div className="grid grid-cols-3 gap-4 relative z-10 w-full max-w-md">
+              <div className="grid grid-cols-4 gap-4 relative z-10 w-full max-w-lg">
                 
                 {/* Left Column (Main Hand, Rings) */}
                 <div className="space-y-4 flex flex-col items-end">
@@ -5238,6 +5529,28 @@ export function FirstPersonWorld({
                   </div>
                 </div>
 
+                {/* Fourth Column (Axe, Pickaxe tools) */}
+                <div className="space-y-4 flex flex-col items-start">
+                  <div 
+                    onClick={() => setSelectedDollSlot('axe')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'axe' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
+                    <span className="text-[8px] absolute top-1 text-gray-500">AXE</span>
+                    <span className="text-xl mt-2">{progress.equipment?.axe ? '🪓' : '❌'}</span>
+                  </div>
+                  <div 
+                    onClick={() => setSelectedDollSlot('pickaxe')}
+                    className={`w-16 h-16 bg-[#0a0b10] border rounded-lg flex flex-col items-center justify-center p-1 relative cursor-pointer transition-all hover:border-red-500 hover:bg-[#121422] ${
+                      selectedDollSlot === 'pickaxe' ? 'border-red-500 shadow-[0_0_15px_rgba(239,68,68,0.4)]' : 'border-gray-700'
+                    }`}
+                  >
+                    <span className="text-[8px] absolute top-1 text-gray-500">PICKAXE</span>
+                    <span className="text-xl mt-2">{progress.equipment?.pickaxe ? '⛏️' : '❌'}</span>
+                  </div>
+                </div>
+
               </div>
               <div className="mt-8 text-[10px] text-gray-600 font-mono uppercase tracking-widest">
                 [ Suelta TAB para cerrar interface ]
@@ -5249,7 +5562,7 @@ export function FirstPersonWorld({
               <div className="w-full md:w-1/3 bg-[#0d0e1b]/95 border-l border-red-900/30 p-6 flex flex-col overflow-y-auto">
                 <div className="flex justify-between items-center border-b border-red-900/40 pb-2 mb-4">
                   <h4 className="text-[#dec1ac] font-bold text-xs tracking-widest uppercase">
-                    Slot: {selectedDollSlot === 'mainHand' ? 'MANO PRINCIPAL' : selectedDollSlot === 'offHand' ? 'MANO SECUNDARIA' : selectedDollSlot === 'chest' ? 'PECHO / ARMADURA' : selectedDollSlot === 'legs' ? 'PIERNAS' : selectedDollSlot === 'head' ? 'CABEZA' : 'MOCHILA'}
+                    Slot: {selectedDollSlot === 'mainHand' ? 'MANO PRINCIPAL' : selectedDollSlot === 'offHand' ? 'MANO SECUNDARIA' : selectedDollSlot === 'chest' ? 'PECHO / ARMADURA' : selectedDollSlot === 'legs' ? 'PIERNAS' : selectedDollSlot === 'head' ? 'CABEZA' : selectedDollSlot === 'backpack' ? 'MOCHILA' : selectedDollSlot === 'axe' ? 'HACHA DE RECOLECCIÓN' : selectedDollSlot === 'pickaxe' ? 'PICO DE EXTRACCIÓN' : ''}
                   </h4>
                   <button 
                     onClick={() => setSelectedDollSlot(null)}
@@ -5280,6 +5593,8 @@ export function FirstPersonWorld({
                       if (selectedDollSlot === 'legs') return ci.subType === 'legs';
                       if (selectedDollSlot === 'head') return ci.subType === 'head';
                       if (selectedDollSlot === 'backpack') return ci.subType === 'backpack';
+                      if (selectedDollSlot === 'axe') return ci.subType === 'axe';
+                      if (selectedDollSlot === 'pickaxe') return ci.subType === 'pickaxe';
                       return false;
                     });
 
@@ -5391,9 +5706,9 @@ export function FirstPersonWorld({
                 <span className="z-10">Q</span>
               </div>
 
-              {/* Dodge Dash Button (V) */}
+              {/* Dodge Dash Button (SFT) */}
               <div 
-                className="relative w-14 h-14 flex items-center justify-center bg-pink-600/80 border-2 border-pink-400 rounded-full cursor-pointer active:scale-90 shadow-xl transition-all select-none backdrop-blur-md text-white font-bold text-xl"
+                className="relative w-14 h-14 flex items-center justify-center bg-pink-600/80 border-2 border-pink-400 rounded-full cursor-pointer active:scale-90 shadow-xl transition-all select-none backdrop-blur-md text-white font-bold text-lg"
                 onTouchStart={(e) => {
                   e.preventDefault();
                   triggerEvadeDash();
@@ -5411,7 +5726,7 @@ export function FirstPersonWorld({
                     strokeDashoffset={dashCooldownLeft > 0 ? 144.5 * (1 - dashCooldownLeft / 3.0) : 0}
                   />
                 </svg>
-                <span className="z-10">V</span>
+                <span className="z-10 text-xs">SHIFT</span>
               </div>
             </div>
           </div>

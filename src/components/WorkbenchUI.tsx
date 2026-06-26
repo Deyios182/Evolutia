@@ -28,6 +28,39 @@ const RECIPES: Record<'forge' | 'weaver' | 'enchanter', Recipe[]> = {
     {
       result: { id: 'a_chest1', name: 'Pechera de Placas Pesadas', type: 'equipment', subType: 'chest', rarity: 'rare', weight: 12, statBonus: 'HP+150' },
       cost: { wood: 0, stone: 50, metal: 150, essence: 0 }, requiredLevel: 3
+    },
+    // Gathering Tools T1-T4
+    {
+      result: { id: 't_axe1', name: 'Hacha de Novicio (T1)', type: 'tool', subType: 'axe', rarity: 'common', tier: 1, weight: 2 },
+      cost: { wood: 5, stone: 5, metal: 0, essence: 0 }, requiredLevel: 1
+    },
+    {
+      result: { id: 't_pick1', name: 'Pico de Novicio (T1)', type: 'tool', subType: 'pickaxe', rarity: 'common', tier: 1, weight: 2 },
+      cost: { wood: 5, stone: 5, metal: 0, essence: 0 }, requiredLevel: 1
+    },
+    {
+      result: { id: 't_axe2', name: 'Hacha de Cobre (T2)', type: 'tool', subType: 'axe', rarity: 'rare', tier: 2, weight: 2 },
+      cost: { wood: 20, stone: 20, metal: 10, essence: 0 }, requiredLevel: 1
+    },
+    {
+      result: { id: 't_pick2', name: 'Pico de Cobre (T2)', type: 'tool', subType: 'pickaxe', rarity: 'rare', tier: 2, weight: 2 },
+      cost: { wood: 20, stone: 20, metal: 10, essence: 0 }, requiredLevel: 1
+    },
+    {
+      result: { id: 't_axe3', name: 'Hacha de Hierro (T3)', type: 'tool', subType: 'axe', rarity: 'epic', tier: 3, weight: 3 },
+      cost: { wood: 40, stone: 40, metal: 30, essence: 0 }, requiredLevel: 2
+    },
+    {
+      result: { id: 't_pick3', name: 'Pico de Hierro (T3)', type: 'tool', subType: 'pickaxe', rarity: 'epic', tier: 3, weight: 3 },
+      cost: { wood: 40, stone: 40, metal: 30, essence: 0 }, requiredLevel: 2
+    },
+    {
+      result: { id: 't_axe4', name: 'Hacha de Titanio (T4)', type: 'tool', subType: 'axe', rarity: 'legendary', tier: 4, weight: 4 },
+      cost: { wood: 80, stone: 80, metal: 60, essence: 10 }, requiredLevel: 3
+    },
+    {
+      result: { id: 't_pick4', name: 'Pico de Titanio (T4)', type: 'tool', subType: 'pickaxe', rarity: 'legendary', tier: 4, weight: 4 },
+      cost: { wood: 80, stone: 80, metal: 60, essence: 10 }, requiredLevel: 3
     }
   ],
   weaver: [

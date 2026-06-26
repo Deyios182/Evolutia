@@ -206,6 +206,36 @@ export function StashUI({ progress, onSaveProgress, onClose, tempBag, setTempBag
         </div>
       );
     }
+    
+    // Render equipment items (weapons, armor, tools) with specific emojis and tier badges
+    const eqItem = slot.equipmentItem;
+    if (eqItem) {
+      const isTool = eqItem.type === 'tool';
+      const sub = eqItem.subType;
+      let emoji = '🛡️';
+      if (isTool) {
+        if (sub === 'axe') emoji = '🪓';
+        else if (sub === 'pickaxe') emoji = '⛏️';
+      } else {
+        if (sub === 'weapon' || sub === 'weapon_1h' || sub === 'weapon_2h') emoji = '⚔️';
+        else if (sub === 'ranged') emoji = '🔫';
+        else if (sub === 'grimoire') emoji = '🔮';
+        else if (sub === 'chest' || sub === 'armor') emoji = '👕';
+        else if (sub === 'head') emoji = '🪖';
+        else if (sub === 'legs') emoji = '👖';
+        else if (sub === 'backpack') emoji = '🎒';
+      }
+      return (
+        <div className="flex flex-col items-center justify-center w-full h-full relative" title={eqItem.name}>
+          <span className="text-2xl drop-shadow-lg">{emoji}</span>
+          {eqItem.tier && (
+            <span className="absolute bottom-0 right-1 text-[8px] font-mono font-bold text-amber-400 bg-black/60 px-0.5 rounded">
+              T{eqItem.tier}
+            </span>
+          )}
+        </div>
+      );
+    }
     return <span className="text-xl">🛡️</span>;
   };
 
