@@ -1711,7 +1711,7 @@ export function FirstPersonWorld({
 
         {/* Hover Name Badge */}
         <div className="absolute bottom-2 bg-black/60 px-3 py-0.5 rounded-full border border-white/10 backdrop-blur-sm z-30">
-          <span className="text-[10px] text-gray-300 font-mono tracking-wider font-bold uppercase">{progress.avatar.name || "Nitz Guardián"}</span>
+          <span className="text-[10px] text-gray-300 font-mono tracking-wider font-bold uppercase">{progress.avatar.nickname || progress.avatar.name || "Nitz Guardián"}</span>
         </div>
       </div>
     );
@@ -1964,7 +1964,7 @@ export function FirstPersonWorld({
             companionSummoned: nextSummoned
           }).catch(err => console.error("Error updating summon status in DB:", err));
         }
-        triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
+        triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.nickname || progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.nickname || progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
       }
 
       // If user presses H, toggle Cabin System overlay
@@ -2142,7 +2142,7 @@ export function FirstPersonWorld({
         { id: 'orit_mentor', name: 'Orit — El Nitz Mentor', x: -3, z: -2, type: 'orit_npc', label: '🌟 Hablar con Orit' },
         { id: 'stash', name: 'Almacén Táctico (Stash)', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro' },
         { id: 'bookshelf', name: 'Terminal Códice de Arquetipos', x: -5, z: 2, type: 'bookshelf', label: '🖥️ Base de Datos de Nitz' },
-        { id: 'companion_nitz', name: 'Tu Criatura Acompañante Nitz', x: 0, z: -1, type: 'nitz_npc', label: '🐾 Interactuar con Nitz' },
+        { id: 'companion_nitz', name: progress.avatar.nickname || progress.avatar.name || 'Tu Criatura Acompañante Nitz', x: 0, z: -1, type: 'nitz_npc', label: '🐾 Interactuar con Nitz' },
         { id: 'door_to_vecindario', name: 'Puerta Blindada (Salida)', x: 0, z: 6.5, type: 'door_vecindario', label: '🚪 Salir al Exterior' },
         // Workbenches: unlocked progressively by cabin level
         ...((progress.cabin?.level || 1) >= 2 ? [
@@ -2326,7 +2326,7 @@ export function FirstPersonWorld({
           facingAngle: parseFloat(cameraAngle.toFixed(2)),
           pvpEnabled: pvpEnabled,
           companionSummoned: progress.companionSummoned || false,
-          activeNitzName: progress.avatar.name || 'Nitz de Origen',
+          activeNitzName: progress.avatar.nickname || progress.avatar.name || 'Nitz de Origen',
           avatar: progress.avatar || null,
           playerAvatar: progress.playerAvatar || null,
           isSpeaking: isProximityChatActive,
@@ -2338,7 +2338,7 @@ export function FirstPersonWorld({
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name, progress.playerAvatar, isProximityChatActive]);
+  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name, progress.avatar.nickname, progress.playerAvatar, isProximityChatActive]);
 
   // Listen for PvP duel challenges and state updates
   useEffect(() => {
@@ -5266,7 +5266,7 @@ export function FirstPersonWorld({
       challengerShieldItem: cShieldItem,
       challengerArmor: cArmor,
       challengerLoot: tempBag,
-      challengerNitzName: progress.avatar.name || 'Nitz de Origen',
+      challengerNitzName: progress.avatar.nickname || progress.avatar.name || 'Nitz de Origen',
       challengerNitzTheme: progress.avatar.colorTheme || 'classic',
       challengerNitzPhase: progress.phase || 1,
 
@@ -5321,7 +5321,7 @@ export function FirstPersonWorld({
         defenderShieldItem: dShieldItem,
         defenderArmor: dArmor,
         defenderLoot: tempBag,
-        defenderNitzName: progress.avatar.name || 'Nitz de Origen',
+        defenderNitzName: progress.avatar.nickname || progress.avatar.name || 'Nitz de Origen',
         defenderNitzTheme: progress.avatar.colorTheme || 'classic',
         defenderNitzPhase: progress.phase || 1,
         logs: arrayUnion(`⚔️ ${progress.username || 'Defender'} ha aceptado el duelo. ¡Que comience el combate!`)
@@ -5799,7 +5799,7 @@ export function FirstPersonWorld({
                   title="Intercambiar dinámicamente tu compañero Nitz"
                 >
                   <RefreshCw className="w-3.5 h-3.5" />
-                  <span>{progress.avatar.name || "Nitz de Origen"}</span>
+                  <span>{progress.avatar.nickname || progress.avatar.name || "Nitz de Origen"}</span>
                 </button>
               )}
             </div>
@@ -5889,7 +5889,7 @@ export function FirstPersonWorld({
                 </span>
                 {peer.companionSummoned && (
                   <span className="text-[7.5px] text-gray-400 font-mono italic">
-                    🐾 {peer.activeNitzName || 'Nitz de Origen'}
+                    🐾 {peer.avatar?.nickname || peer.activeNitzName || 'Nitz de Origen'}
                   </span>
                 )}
               </div>

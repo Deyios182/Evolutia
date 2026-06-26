@@ -120,7 +120,7 @@ function buildFirstMeetDialogue(dominantEmotion: EmotionName, nitzName: string):
 
 function buildReturnDialogue(progress: PlayerProgress, dominantEmotion: EmotionName): DialogueNode[] {
   const cabinLevel = progress.cabin?.level || 1;
-  const nitzName = progress.avatar.name || 'tu Nitz';
+  const nitzName = progress.avatar.nickname || progress.avatar.name || 'tu Nitz';
   const activeQuest = progress.cabin?.activeQuests?.[0];
   const emotionLabel = EMOTION_LABELS[dominantEmotion] || 'algo especial';
 
@@ -339,7 +339,7 @@ function buildSanctuaryDialogue(
 // ─────────────────────────────────────────────────────────────────
 export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmotion, interactingNodeId }: OritDialogueUIProps) {
   const isFirstMeet = !progress.cabin?.oritMet;
-  const nitzName = progress.avatar.name || 'Nitz';
+  const nitzName = progress.avatar.nickname || progress.avatar.name || 'Nitz';
 
   const isSanctuary = progress.worldPresentation?.active;
   const dialogueTree: DialogueNode[] = isSanctuary

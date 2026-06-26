@@ -21,6 +21,7 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
   };
 
   const [name, setName] = useState(currentAvatar.name || '');
+  const [nickname, setNickname] = useState(currentAvatar.nickname || '');
   const [accessory, setAccessory] = useState<AvatarCustomization['accessory']>(currentAvatar.accessory || 'none');
   const [clothing, setClothing] = useState<AvatarCustomization['clothing']>(currentAvatar.clothing || 'none');
   const [colorTheme, setColorTheme] = useState<AvatarCustomization['colorTheme']>(currentAvatar.colorTheme || 'classic');
@@ -53,6 +54,7 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
     const updatedAvatar: AvatarCustomization = {
       ...currentAvatar,
       name: name || 'Nitz de Origen',
+      nickname: nickname.trim() || undefined,
       accessory,
       clothing,
       colorTheme,
@@ -61,7 +63,7 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
     const newProgress: PlayerProgress = {
       ...progress,
       avatar: updatedAvatar,
-      activeNitzName: updatedAvatar.name // keep synced
+      activeNitzName: updatedAvatar.nickname || updatedAvatar.name // keep synced
     };
 
     onSaveProgress(newProgress);
@@ -71,7 +73,7 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
       try {
         await updateDoc(userRef, {
           avatar: updatedAvatar,
-          activeNitzName: updatedAvatar.name
+          activeNitzName: updatedAvatar.nickname || updatedAvatar.name
         });
       } catch (err) {
         console.error("Error updating avatar in Firestore:", err);
@@ -91,7 +93,7 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
         
         <div className="text-center z-10 w-full">
           <span className="text-cyan-400 text-xs font-mono font-bold tracking-widest uppercase">Vista del Avatar</span>
-          <h3 className="text-xl font-bold font-headline-md mt-1 truncate">{name || 'Sin Nombre'}</h3>
+          <h3 className="text-xl font-bold font-headline-md mt-1 truncate">{nickname || name || 'Sin Nombre'}</h3>
         </div>
 
         {/* Conceptual Avatar Visual representation in UI */}
@@ -202,16 +204,16 @@ export function AvatarCustomizeUI({ progress, onSaveProgress, onClose }: AvatarC
             </button>
           </div>
 
-          {/* Section 1: Name */}
+          {/* Section 1: Nickname */}
           <div className="space-y-2">
             <label className="text-xs font-mono font-bold tracking-widest text-cyan-400 uppercase flex items-center gap-2">
-              <Sparkles className="w-4 h-4" /> Nombre de tu Criatura Nitz
+              <Sparkles className="w-4 h-4" /> Apodo / Mote de tu Criatura Nitz (Opcional)
             </label>
             <input
               type="text"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              placeholder="Nombra tu avatar..."
+              value={nickname}
+              onChange={(e) => setNickname(e.target.value)}
+              placeholder="Escribe un mote opcional..."
               className="w-full bg-black/40 border border-cyan-500/20 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/60 transition duration-200 font-bold"
               maxLength={20}
             />

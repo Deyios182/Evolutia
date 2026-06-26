@@ -119,7 +119,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
       ...prev,
       {
         id: `pet_${Date.now()}`,
-        sender: playerProgress.avatar.name || 'Nitz',
+        sender: playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz',
         avatarUrl: '',
         text: textMsg,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -176,7 +176,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
         body: JSON.stringify({
           messages: [...messages, userMsg],
           currentDominant: dominantName,
-          name: playerProgress.avatar.name || 'Nitz de Origen',
+          name: playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz de Origen',
           phase: playerProgress.phase,
           accessory: playerProgress.avatar.accessory
         }),
@@ -191,7 +191,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
 
       const newResponseMsg: ChatMessage = {
         id: `n_${Date.now()}`,
-        sender: playerProgress.avatar.name || 'Nitz de Origen',
+        sender: playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz de Origen',
         avatarUrl: '',
         text: textToSpeak,
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -210,7 +210,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
         ...prev,
         {
           id: `n_err_${Date.now()}`,
-          sender: playerProgress.avatar.name || 'Nitz de Origen',
+          sender: playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz de Origen',
           avatarUrl: '',
           text: '*se inclina un poco tímido, brillando tenuemente* La resonancia del bosque es inestable justo ahora... Siento tus buenas intenciones.',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -294,7 +294,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
               </div>
 
               <div className="text-center space-y-1 z-10">
-                <h3 className="text-xl font-bold text-white">{playerProgress.avatar.name || 'Nitz'}</h3>
+                <h3 className="text-xl font-bold text-white">{playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz'}</h3>
                 <p className="text-xs text-tertiary font-mono">Conexión Astral Establecida</p>
               </div>
 
@@ -359,7 +359,7 @@ export const MyHome: React.FC<MyHomeProps> = ({
           <div className="relative z-10 flex items-center justify-between pointer-events-none">
             <div className="space-y-1">
               <span className="text-[10px] text-tertiary font-mono uppercase tracking-wider block">Cabaña de Crianza</span>
-              <h2 className="text-xl font-bold font-headline-lg text-white">{playerProgress.avatar.name || 'Nitz de Origen'}</h2>
+              <h2 className="text-xl font-bold font-headline-lg text-white">{playerProgress.avatar.nickname || playerProgress.avatar.name || 'Nitz de Origen'}</h2>
             </div>
             <div className="flex gap-2">
               <span className="text-[10px] bg-white/5 border border-white/10 text-white font-mono rounded px-2.5 py-1">

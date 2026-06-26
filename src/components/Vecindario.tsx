@@ -323,7 +323,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
         id: 'plot_player',
         ownerName: progress.username || 'Tú',
         title: 'Tu Cabaña Sagrada',
-        nitzName: progress.avatar.name || 'Tu Nitz de Origen',
+        nitzName: progress.avatar.nickname || progress.avatar.name || 'Tu Nitz de Origen',
         emotions: 'Alegría/Serenidad',
         isPlayer: true,
         plotLevel: progress.plotLevel,
@@ -359,7 +359,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
           id: docSnap.id,
           ownerName: data.username || 'Guardián',
           title: `Cabaña de ${data.username || 'Guardián'}`,
-          nitzName: data.avatar?.name || 'Nitz Místico',
+          nitzName: data.avatar?.nickname || data.avatar?.name || 'Nitz Místico',
           emotions: data.dominantEmotion || 'Serenidad',
           isPlayer: false,
           plotLevel: data.plotLevel || 1,
@@ -938,7 +938,7 @@ export const Vecindario: React.FC<VecindarioProps> = ({ progress, onSaveProgress
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {syncedNeighbors.map((plot) => {
                 const isMe = plot.isPlayer;
-                const activeNitzName = isMe ? (progress.avatar.name || 'Nitz de Origen') : plot.nitzName;
+                const activeNitzName = isMe ? (progress.avatar.nickname || progress.avatar.name || 'Nitz de Origen') : plot.nitzName;
                 const likeCount = socialHearts[plot.id] || 0;
 
                 return (

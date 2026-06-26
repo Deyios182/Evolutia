@@ -26,6 +26,7 @@ export interface PlayerAvatar {
 
 export interface AvatarCustomization {
   name: string;
+  nickname?: string;
   accessory: 'none' | 'halo' | 'ribbon' | 'horn_gold' | 'scarf_cozy';
   auraType: 'stellar' | 'vortex' | 'sparkles' | 'none';
   colorTheme: 'classic' | 'abyssal' | 'solstice' | 'primeval';
