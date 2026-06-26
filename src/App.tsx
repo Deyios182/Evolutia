@@ -15,7 +15,7 @@ import {
   Hammer,
   Users
 } from 'lucide-react';
-import { GameView, EmotionVector, PlayerProgress, AvatarCustomization, GatheringInventory, CraftableItem } from './types';
+import { GameView, EmotionVector, PlayerProgress, AvatarCustomization, GatheringInventory, CraftableItem, CabinState } from './types';
 import { Onboarding } from './components/Onboarding';
 import { MyHome } from './components/MyHome';
 import { Lobby } from './components/Lobby';
@@ -50,14 +50,25 @@ const DEFAULT_INVENTORY: GatheringInventory = {
   essence: { common: 3, rare: 0, epic: 0, legendary: 0 },
 };
 
+const DEFAULT_CABIN: CabinState = {
+  level: 1,
+  upgrades: [],
+  activeQuests: [],
+  completedQuestIds: [],
+  oritMet: false,
+  oritDialogueIndex: 0,
+};
+
 const DEFAULT_PROGRESS: PlayerProgress = {
   isLoggedIn: false,
   username: '',
   avatarUrl: '',
   gold: 150,
   exp: 0,
+  hp: 100,
+  maxHp: 100,
   avatar: {
-    name: 'Orit',
+    name: 'Nitz',
     accessory: 'none',
     auraType: 'stellar',
     colorTheme: 'classic',
@@ -70,14 +81,16 @@ const DEFAULT_PROGRESS: PlayerProgress = {
   unlockedArchetypes: ['arch_joy'],
   inventory: DEFAULT_INVENTORY,
   craftedItems: [
-    { id: 'start_sword', name: 'Espada de Novicio', type: 'equipment', subType: 'weapon', rarity: 'common', statBonus: '+5% Fuerza Física', equipped: true },
+    { id: 'start_sword', name: 'Espada de Novicio', type: 'equipment', subType: 'weapon_1h', rarity: 'common', statBonus: '+5% Fuerza Física', equipped: true },
     { id: 'init_decor_table', name: 'Mesa de Cedro de los Vientos', type: 'furniture', rarity: 'common', placed: true }
   ],
   houseDecorations: [
     { itemId: 'init_decor_table', slot: 1 }
   ],
   plotLevel: 1,
-  authorizedBuilders: []
+  authorizedBuilders: [],
+  cabin: DEFAULT_CABIN,
+  devKitInjected: false,
 };
 
 export default function App() {
@@ -113,6 +126,10 @@ export default function App() {
               ...cloudData,
               plotLevel: cloudData.plotLevel ?? DEFAULT_PROGRESS.plotLevel,
               authorizedBuilders: cloudData.authorizedBuilders ?? DEFAULT_PROGRESS.authorizedBuilders,
+              cabin: {
+                ...DEFAULT_CABIN,
+                ...(cloudData.cabin || {}),
+              },
               isLoggedIn: true,
               username: cloudData.username || user.displayName || 'Guardián Místico',
               avatarUrl: user.photoURL || '',
@@ -173,6 +190,10 @@ export default function App() {
               inventory: {
                 ...DEFAULT_PROGRESS.inventory,
                 ...(parsed.inventory || {})
+              },
+              cabin: {
+                ...DEFAULT_CABIN,
+                ...(parsed.cabin || {}),
               },
               craftedItems: parsed.craftedItems || DEFAULT_PROGRESS.craftedItems,
               houseDecorations: parsed.houseDecorations || DEFAULT_PROGRESS.houseDecorations,

@@ -68,6 +68,53 @@ export interface StashSlot {
   equipmentItem?: CraftableItem;
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Cabin System Interfaces
+// ─────────────────────────────────────────────────────────────────
+
+/** An individual unlockable cabin station or visual upgrade */
+export interface CabinUpgrade {
+  id: string;           // e.g. 'forge_basic', 'weaver_t1', 'window_repairs'
+  name: string;
+  description: string;
+  level: number;        // 0 = not built, 1-3 = upgrade tiers
+  unlockedAt?: string;  // ISO timestamp
+}
+
+/** A quest given by Orit the mentor Nitz */
+export interface OritQuest {
+  id: string;
+  title: string;
+  description: string;
+  status: 'pending' | 'active' | 'completed';
+  requirements: {
+    wood_common?: number;
+    stone_common?: number;
+    metal_common?: number;
+    essence_common?: number;
+    wood_rare?: number;
+    stone_rare?: number;
+    metal_rare?: number;
+    essence_rare?: number;
+  };
+  reward: {
+    gold?: number;
+    exp?: number;
+    unlockUpgradeId?: string; // ID of cabin upgrade unlocked on completion
+  };
+}
+
+/** Full persistent state of the player's cabin */
+export interface CabinState {
+  level: number;                  // 1 to 5
+  upgrades: CabinUpgrade[];       // Stations and visual improvements built
+  activeQuests: OritQuest[];      // Current active quests from Orit
+  completedQuestIds: string[];    // IDs of finished quests (for history)
+  oritMet: boolean;               // True once the player had the first Orit dialogue
+  oritDialogueIndex: number;      // Index of the last dialogue node seen
+  customPositions?: Record<string, { x: number; z: number; rotation: number }>;
+}
+
 export interface PlayerProgress {
   isLoggedIn: boolean;
   username: string;
@@ -114,6 +161,12 @@ export interface PlayerProgress {
     grimoire?: number;
     fists?: number;
   };
+  // Cabin system
+  cabin?: CabinState;
+  // Derived field written to Firestore for multiplayer queries
+  dominantEmotion?: string;
+  // Flag to prevent re-injecting the dev test kit
+  devKitInjected?: boolean;
 }
 
 export interface MarketplaceItem {

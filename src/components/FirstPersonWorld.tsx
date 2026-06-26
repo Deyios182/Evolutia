@@ -897,6 +897,8 @@ import { RefinerUI } from './RefinerUI';
 import { GeminiLiveChat } from './GeminiLiveChat';
 import { AvatarCustomizeUI } from './AvatarCustomizeUI';
 import { ArmoryUI } from './ArmoryUI';
+import { OritDialogueUI } from './OritDialogueUI';
+import { CabinSystem } from './CabinSystem';
 
 interface FirstPersonWorldProps {
   progress: PlayerProgress;
@@ -932,7 +934,7 @@ interface InteractiveNode3D {
   name: string;
   x: number;
   z: number;
-  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash' | 'forge' | 'weaver' | 'enchanter' | 'refiner' | 'wardrobe_mirror' | 'wardrobe_armory';
+  type: 'tree' | 'ore' | 'synth' | 'anvil' | 'bookshelf' | 'door_vecindario' | 'door_cabin' | 'door_lobby' | 'door_map1' | 'door_map2' | 'door_map3' | 'door_arena' | 'nitz_npc' | 'orit_npc' | 'house_plot' | 'portal_praise' | 'marketplace' | 'stash' | 'forge' | 'weaver' | 'enchanter' | 'refiner' | 'wardrobe_mirror' | 'wardrobe_armory';
   rarity?: 'common' | 'rare' | 'epic' | 'legendary';
   clicksRequired?: number;
   clicksCurrent?: number;
@@ -1006,7 +1008,7 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory';
+  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory' | 'orit_dialogue' | 'cabin_system';
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
 
@@ -1199,9 +1201,11 @@ export function FirstPersonWorld({
 
   // Active overlay and interaction references for keydown listener
   const activeOverlayRef = useRef(activeOverlay);
+  const currentMapRef = useRef(currentMap);
   useEffect(() => {
     activeOverlayRef.current = activeOverlay;
-  }, [activeOverlay]);
+    currentMapRef.current = currentMap;
+  }, [activeOverlay, currentMap]);
 
   const progressRef = useRef(progress);
   const onSaveProgressRef = useRef(onSaveProgress);
@@ -1646,11 +1650,12 @@ export function FirstPersonWorld({
     }
   };
 
-  // Inject testing kit (T1-T4 tools, raw resources, refined resources)
+  // Inject testing kit — DEV mode only, once per profile
   useEffect(() => {
-    const alreadyApplied = (progress.craftedItems || []).some(item => item.id.includes('t_axe4_test'));
-    if (!alreadyApplied) {
-      const testingTools: CraftableItem[] = [
+    const isDev = import.meta.env.DEV;
+    if (!isDev || progress.devKitInjected) return;
+
+    const testingTools: CraftableItem[] = [
         { id: `t_axe1_test_${Date.now()}`, name: 'Hacha de Novicio (T1)', type: 'tool', subType: 'axe', rarity: 'common', tier: 1, weight: 2, equipped: false },
         { id: `t_pick1_test_${Date.now()}`, name: 'Pico de Novicio (T1)', type: 'tool', subType: 'pickaxe', rarity: 'common', tier: 1, weight: 2, equipped: false },
         { id: `t_axe2_test_${Date.now()}`, name: 'Hacha de Cobre (T2)', type: 'tool', subType: 'axe', rarity: 'rare', tier: 2, weight: 2, equipped: false },
@@ -1720,7 +1725,8 @@ export function FirstPersonWorld({
       const nextProg = {
         ...progress,
         craftedItems: updatedCraftedList,
-        stashGrid: newGrid
+        stashGrid: newGrid,
+        devKitInjected: true,
       };
 
       onSaveProgress(nextProg);
@@ -1728,12 +1734,12 @@ export function FirstPersonWorld({
         const userRef = doc(db, 'users', auth.currentUser.uid);
         updateDoc(userRef, {
           craftedItems: updatedCraftedList,
-          stashGrid: newGrid
+          stashGrid: newGrid,
+          devKitInjected: true,
         }).catch(err => console.error("Error applying testing kit in DB:", err));
       }
-      triggerNotification("🎁 Kit de Pruebas Inyectado: ¡Todas las herramientas y materiales en tu inventario!");
-    }
-  }, [progress.craftedItems]);
+      triggerNotification("🎁 [DEV] Kit de Pruebas Inyectado: herramientas y materiales listos.");
+  }, []);
 
   // Evade Dash trigger
   const triggerEvadeDash = () => {
@@ -1822,6 +1828,15 @@ export function FirstPersonWorld({
           }).catch(err => console.error("Error updating summon status in DB:", err));
         }
         triggerNotification(nextSummoned ? `🐾 ¡${progressRef.current.avatar.name || 'Nitz'} invocado! Te seguirá y te ayudará.` : `🐾 ${progressRef.current.avatar.name || 'Nitz'} regresó a descansar.`);
+      }
+
+      // If user presses H, toggle Cabin System overlay
+      if ((e.key === 'h' || e.key === 'H') && activeOverlayRef.current === 'none') {
+        if (currentMapRef.current === 'cabin') {
+          setActiveOverlay('cabin_system');
+        } else {
+          triggerNotification("🏠 El gestor de cabaña solo se puede abrir dentro de tu cabaña.");
+        }
       }
 
       // If user presses V, activate proximity voice chat
@@ -1975,17 +1990,25 @@ export function FirstPersonWorld({
 
     if (currentMap === 'cabin') {
       newNodes = [
+        // Orit NPC — always present in cabin
+        { id: 'orit_mentor', name: 'Orit — El Nitz Mentor', x: -3, z: -2, type: 'orit_npc', label: '🌟 Hablar con Orit' },
         { id: 'stash', name: 'Almacén Táctico (Stash)', x: 4, z: 2, type: 'stash', label: '📦 Abrir Almacén Seguro' },
         { id: 'bookshelf', name: 'Terminal Códice de Arquetipos', x: -5, z: 2, type: 'bookshelf', label: '🖥️ Base de Datos de Nitz' },
         { id: 'companion_nitz', name: 'Tu Criatura Acompañante Nitz', x: 0, z: -1, type: 'nitz_npc', label: '🐾 Interactuar con Nitz' },
         { id: 'door_to_vecindario', name: 'Puerta Blindada (Salida)', x: 0, z: 6.5, type: 'door_vecindario', label: '🚪 Salir al Exterior' },
-        // Nuevos Bancos de Trabajo Modulares (Arc Raiders style)
-        { id: 'workbench_forge', name: 'Herrería de Combate Pesado', x: 5, z: -3, type: 'forge', label: '⚒️ Fabricar Armas y Blindaje' },
-        { id: 'workbench_weaver', name: 'Telar de Supervivencia', x: -5, z: -3, type: 'weaver', label: '🧵 Fabricar Mochilas y Tela' },
-        { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter', label: '🔮 Fabricar Grimorios y Joyas' },
-        { id: 'workbench_refiner', name: 'Refinería de Recursos Estelares', x: 2.5, z: -4.5, type: 'refiner', label: '🔥 Refinar Madera, Metal y Piedra' },
-        { id: 'wardrobe_mirror', name: 'Espejo de Apariencia', x: -2.5, z: -4.5, type: 'wardrobe_mirror', label: '🪞 Personalizar Apariencia del Avatar' },
-        { id: 'wardrobe_armory', name: 'Armero de Pruebas', x: -2.5, z: -2.5, type: 'wardrobe_armory', label: '⚔️ Probar Armas y Equipamiento' }
+        // Workbenches: unlocked progressively by cabin level
+        ...((progress.cabin?.level || 1) >= 2 ? [
+          { id: 'workbench_forge', name: 'Herrería de Combate Pesado', x: 5, z: -3, type: 'forge' as const, label: '⚒️ Fabricar Armas y Blindaje' },
+          { id: 'workbench_refiner', name: 'Refinería de Recursos Estelares', x: 2.5, z: -4.5, type: 'refiner' as const, label: '🔥 Refinar Madera, Metal y Piedra' },
+        ] : []),
+        ...((progress.cabin?.level || 1) >= 3 ? [
+          { id: 'workbench_weaver', name: 'Telar de Supervivencia', x: -5, z: -3, type: 'weaver' as const, label: '🧵 Fabricar Mochilas y Tela' },
+          { id: 'workbench_enchanter', name: 'Mesa de Arcanos', x: 0, z: -5, type: 'enchanter' as const, label: '🔮 Fabricar Grimorios y Joyas' },
+        ] : []),
+        ...((progress.cabin?.level || 1) >= 4 ? [
+          { id: 'wardrobe_mirror', name: 'Espejo de Apariencia', x: -2.5, z: -4.5, type: 'wardrobe_mirror' as const, label: '🪞 Personalizar Apariencia del Avatar' },
+          { id: 'wardrobe_armory', name: 'Armero de Pruebas', x: -2.5, z: -2.5, type: 'wardrobe_armory' as const, label: '⚔️ Probar Armas y Equipamiento' },
+        ] : []),
       ];
       setPlayerX(0);
       setPlayerZ(4);
@@ -3003,10 +3026,37 @@ export function FirstPersonWorld({
     // Populate actual online peers dynamically in tick loop via onlinePlayersRef to prevent scene re-creation
     const peerMeshes: { id: string; mesh: THREE.Group | THREE.Mesh; companionMesh?: THREE.Group | THREE.Mesh | null; activeNitzName?: string; companionSummoned?: boolean }[] = [];
 
-    // Render Summoned Nitz Companion in open maps
+    // Render Player's Companion Nitz in Cabin (always visible there)
+    // In other maps: only when companionSummoned === true
     let companionMesh: THREE.Group | THREE.Mesh | null = null;
     let companionRing: THREE.Mesh | null = null;
-    if (progress.companionSummoned && currentMap !== 'cabin') {
+    if (currentMap === 'cabin') {
+      // Always show player Nitz in cabin
+      companionMesh = createDetailedNitzMesh(
+        progress.avatar,
+        currentDominant.name as EmotionName,
+        progress.phase,
+        0.38
+      );
+      companionMesh.position.set(0, 1.0, -1);
+      scene.add(companionMesh);
+      companionMeshRef.current = companionMesh;
+
+      // Orit NPC mesh — golden mentor Nitz, always in cabin
+      const oritAvatar: AvatarCustomization = {
+        name: 'Orit',
+        accessory: 'halo',
+        auraType: 'sparkles',
+        colorTheme: 'solstice',
+        clothing: 'shawl',
+        traits: ['Ojos Rutilantes'],
+      };
+      const oritMesh = createDetailedNitzMesh(oritAvatar, 'Alegría', 3, 0.55);
+      oritMesh.position.set(-3, 1.2, -2);
+      oritMesh.name = 'orit_mentor_mesh';
+      scene.add(oritMesh);
+      activeMeshes.push(oritMesh);
+    } else if (progress.companionSummoned) {
       companionMesh = createDetailedNitzMesh(
         progress.avatar,
         currentDominant.name as EmotionName,
@@ -3622,6 +3672,20 @@ export function FirstPersonWorld({
         if (m.name === 'companion_nitz') {
           m.position.y = 1.0 + Math.sin(timer * 2.2) * 0.22;
           m.rotation.y += 0.015;
+        } else if (m.name === 'orit_mentor_mesh') {
+          // Orit levitation + slow spin
+          m.position.y = 1.2 + Math.sin(timer * 1.4) * 0.18;
+          m.rotation.y += 0.008;
+          // Animate Orit's aura pulsing
+          const ud = m.userData;
+          if (ud && ud.aura) {
+            const pulse = 1.05 + Math.sin(timer * 3.5) * 0.08;
+            ud.aura.scale.set(pulse, pulse, pulse);
+          }
+          if (ud && ud.crown && ud.crown.visible) {
+            ud.crown.position.y = 1.5 + Math.sin(timer * 2.0) * 0.06;
+            ud.crown.rotation.y = timer * 1.2;
+          }
         } else if (m.userData && m.userData.vortex) {
           m.userData.vortex.rotation.z += 0.02;
         } else if (m.userData && m.userData.floatingCrystal) {
@@ -4847,6 +4911,8 @@ export function FirstPersonWorld({
       setActiveOverlay('codex');
     } else if (nearNode.type === 'nitz_npc') {
       setActiveOverlay('interactive_pet_chat');
+    } else if (nearNode.type === 'orit_npc') {
+      setActiveOverlay('orit_dialogue');
     } else if (nearNode.type === 'house_plot') {
       // Praise neighbor houseplot
       if (nearNode.plotOwnerId) {
@@ -5396,6 +5462,16 @@ export function FirstPersonWorld({
 
   const distanceToBeacon = currentMap === 'map3' ? Math.sqrt(Math.pow(playerX - extractionXRef.current, 2) + Math.pow(playerZ - extractionZRef.current, 2)) : 999;
   const isNearBeacon = distanceToBeacon <= 5.0;
+
+  // Auto-open Orit dialogue on first cabin entry
+  useEffect(() => {
+    if (currentMap === 'cabin' && !progress.cabin?.oritMet) {
+      const timer = setTimeout(() => {
+        setActiveOverlay('orit_dialogue');
+      }, 1500);
+      return () => clearTimeout(timer);
+    }
+  }, [currentMap, progress.cabin?.oritMet]);
 
   return (
     <div className="w-full relative bg-[#090a14] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" style={{ height: '780px' }}>
@@ -6056,6 +6132,31 @@ export function FirstPersonWorld({
                     <GeminiLiveChat 
                       progress={progress}
                       onClose={() => setActiveOverlay('interactive_pet_chat')}
+                    />
+                  )}
+
+                  {/* Orit Dialogue — lightweight HUD overlay, renders above 3D canvas */}
+                  {activeOverlay === 'orit_dialogue' && (
+                    <OritDialogueUI
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={(action) => {
+                        if (action === 'open_cabin_system') {
+                          setActiveOverlay('cabin_system');
+                        } else {
+                          setActiveOverlay('none');
+                        }
+                      }}
+                      dominantEmotion={currentDominant.name}
+                    />
+                  )}
+
+                  {/* Cabin System Overlay */}
+                  {activeOverlay === 'cabin_system' && (
+                    <CabinSystem
+                      progress={progress}
+                      onSaveProgress={onSaveProgress}
+                      onClose={() => setActiveOverlay('none')}
                     />
                   )}
 
