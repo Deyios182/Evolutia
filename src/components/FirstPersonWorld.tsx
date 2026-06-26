@@ -6089,7 +6089,7 @@ export function FirstPersonWorld({
 
       {/* RENDER IMMERSIVE GAME OVERLAYS ON SELECTION */}
       <AnimatePresence>
-        {activeOverlay !== 'none' && (
+        {activeOverlay !== 'none' && activeOverlay !== 'orit_dialogue' && (
           <motion.div
             initial={{ opacity: 0, scale: 0.98 }}
             animate={{ opacity: 1, scale: 1 }}
@@ -6234,23 +6234,6 @@ export function FirstPersonWorld({
                     />
                   )}
 
-                  {/* Orit Dialogue — lightweight HUD overlay, renders above 3D canvas */}
-                  {activeOverlay === 'orit_dialogue' && (
-                    <OritDialogueUI
-                      progress={progress}
-                      onSaveProgress={onSaveProgress}
-                      onClose={(action) => {
-                        if (action === 'open_cabin_system') {
-                          setActiveOverlay('cabin_system');
-                        } else {
-                          setActiveOverlay('none');
-                        }
-                      }}
-                      dominantEmotion={currentDominant.name}
-                      interactingNodeId={activeDialogueNodeId}
-                    />
-                  )}
-
                   {/* Cabin System Overlay */}
                   {activeOverlay === 'cabin_system' && (
                     <CabinSystem
@@ -6266,6 +6249,23 @@ export function FirstPersonWorld({
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* Orit Dialogue — lightweight HUD overlay, renders above 3D canvas */}
+      {activeOverlay === 'orit_dialogue' && (
+        <OritDialogueUI
+          progress={progress}
+          onSaveProgress={onSaveProgress}
+          onClose={(action) => {
+            if (action === 'open_cabin_system') {
+              setActiveOverlay('cabin_system');
+            } else {
+              setActiveOverlay('none');
+            }
+          }}
+          dominantEmotion={currentDominant.name}
+          interactingNodeId={activeDialogueNodeId}
+        />
+      )}
 
       {/* RENDER PVP ACTIVE BATTLE OVERLAY */}
       <AnimatePresence>

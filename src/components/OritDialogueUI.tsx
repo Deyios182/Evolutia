@@ -361,7 +361,7 @@ export function OritDialogueUI({ progress, onSaveProgress, onClose, dominantEmot
     if (dialogueTree[0]) {
       setCurrentNodeId(dialogueTree[0].id);
     }
-  }, [interactingNodeId, dialogueTree]);
+  }, [interactingNodeId]);
 
   // Fade in on mount
   useEffect(() => {
