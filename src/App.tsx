@@ -84,6 +84,15 @@ const DEFAULT_PROGRESS: PlayerProgress = {
     clothing: 'none',
     traits: ['Afectuoso']
   },
+  playerAvatar: {
+    style: 'style1',
+    bodyColor: '#3b82f6',
+    detailColor: '#f59e0b',
+    accessory: 'none',
+    eyeStyle: 'round',
+    mouthStyle: 'happy',
+    customized: false,
+  },
   phase: 1,
   emotions: INITIAL_EMOTIONS,
   interactionCount: 0,
@@ -148,6 +157,9 @@ export default function App() {
               pendingCompanionSeed: cloudData.pendingCompanionSeed !== undefined 
                 ? cloudData.pendingCompanionSeed 
                 : DEFAULT_PROGRESS.pendingCompanionSeed,
+              playerAvatar: cloudData.playerAvatar !== undefined
+                ? cloudData.playerAvatar
+                : DEFAULT_PROGRESS.playerAvatar,
               isLoggedIn: true,
               username: cloudData.username || user.displayName || 'Guardián Místico',
               avatarUrl: user.photoURL || '',
@@ -220,6 +232,9 @@ export default function App() {
               pendingCompanionSeed: parsed.pendingCompanionSeed !== undefined 
                 ? parsed.pendingCompanionSeed 
                 : DEFAULT_PROGRESS.pendingCompanionSeed,
+              playerAvatar: parsed.playerAvatar !== undefined
+                ? parsed.playerAvatar
+                : DEFAULT_PROGRESS.playerAvatar,
               craftedItems: parsed.craftedItems || DEFAULT_PROGRESS.craftedItems,
               houseDecorations: parsed.houseDecorations || DEFAULT_PROGRESS.houseDecorations,
               plotLevel: parsed.plotLevel ?? DEFAULT_PROGRESS.plotLevel,

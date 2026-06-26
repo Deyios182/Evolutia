@@ -14,6 +14,16 @@ export interface EmotionVector {
 
 export type EmotionName = keyof EmotionVector;
 
+export interface PlayerAvatar {
+  style: 'style1' | 'style2' | 'style3'; // Estilo 1, Estilo 2, Estilo 3
+  bodyColor: string; // Color hexadecimal del cuerpo
+  detailColor: string; // Color hexadecimal de los detalles
+  accessory: 'none' | 'halo' | 'cap' | 'glasses' | 'backpack'; // Accesorios básicos
+  eyeStyle: 'round' | 'glow' | 'narrow'; // Ojos personalizables
+  mouthStyle: 'happy' | 'neutral' | 'sad' | 'surprised'; // Boca personalizable
+  customized: boolean; // Flag para no mostrar la pantalla inicial otra vez
+}
+
 export interface AvatarCustomization {
   name: string;
   accessory: 'none' | 'halo' | 'ribbon' | 'horn_gold' | 'scarf_cozy';
@@ -134,6 +144,7 @@ export interface PlayerProgress {
   hp: number;
   maxHp: number;
   avatar: AvatarCustomization;
+  playerAvatar?: PlayerAvatar;
   phase: number; // 1 to 5
   emotions: EmotionVector;
   interactionCount: number;

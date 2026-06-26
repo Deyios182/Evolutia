@@ -29,7 +29,7 @@ import {
   MessageSquare
 } from 'lucide-react';
 import * as THREE from 'three';
-import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName, AvatarCustomization, EquipmentSlots } from '../types';
+import { PlayerProgress, GatheringInventory, CraftableItem, EmotionName, AvatarCustomization, EquipmentSlots, PlayerAvatar } from '../types';
 import { db, auth } from '../firebase';
 
 const EMOTION_COLORS: Record<EmotionName, number> = {
@@ -247,157 +247,246 @@ function createDetailedNitzMesh(
   return group;
 }
 
-function createDetailedPlayerAvatar(
-  avatar: AvatarCustomization,
-  dominantEmotion: EmotionName,
-  phase: number
+export function createDetailedPlayerAvatar(
+  avatar: PlayerAvatar,
+  isSpeaking: boolean = false
 ): THREE.Group {
   const group = new THREE.Group();
-
-  // Color Theme Resolver
-  let themeColor = EMOTION_COLORS[dominantEmotion] || 0x00e1d9;
-  if (avatar.colorTheme === 'abyssal') themeColor = 0x8b5cf6;
-  else if (avatar.colorTheme === 'solstice') themeColor = 0xf59e0b;
-  else if (avatar.colorTheme === 'primeval') themeColor = 0xef4444;
-  else if (avatar.colorTheme === 'classic') themeColor = 0x00e1d9;
-
-  // --- 1. BASE HUMANOID PARTS ---
+  const bodyColor = avatar.bodyColor || '#3b82f6';
+  const detailColor = avatar.detailColor || '#f59e0b';
   
-  // Torso / Body (robe extends lower)
-  const isRobe = avatar.clothing === 'robe_sage';
-  const bodyHeight = isRobe ? 1.3 : 0.9;
-  const bodyGeo = new THREE.CylinderGeometry(0.35, isRobe ? 0.55 : 0.35, bodyHeight, 16);
-  const bodyMat = new THREE.MeshStandardMaterial({
-    color: themeColor,
-    roughness: 0.4,
-    metalness: avatar.clothing === 'armor_shard' ? 0.8 : 0.1
-  });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  body.position.y = isRobe ? 0.45 : 0.65;
-  body.castShadow = true;
-  body.receiveShadow = true;
-  group.add(body);
+  const bodyMat = new THREE.MeshStandardMaterial({ color: bodyColor, roughness: 0.4 });
+  const detailMat = new THREE.MeshStandardMaterial({ color: detailColor, roughness: 0.3 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xf5f8ff, roughness: 0.4 });
 
-  // Head
-  const headGeo = new THREE.SphereGeometry(0.32, 24, 24);
-  const headMat = new THREE.MeshStandardMaterial({
-    color: 0xf5f8ff,
-    roughness: 0.3
-  });
+  // --- BASE BODY STRUCTURE ---
+  const isRobe = avatar.style === 'style2';
+  if (avatar.style === 'style2') {
+    // Style 2: Robe/Sage Style
+    const torsoGeo = new THREE.ConeGeometry(0.38, 1.1, 16);
+    torsoGeo.translate(0, 0.55, 0);
+    const torso = new THREE.Mesh(torsoGeo, bodyMat);
+    torso.position.y = 0.1;
+    group.add(torso);
+
+    // Mystical shoulder overlay
+    const shawlGeo = new THREE.CylinderGeometry(0.42, 0.45, 0.2, 16);
+    const shawl = new THREE.Mesh(shawlGeo, detailMat);
+    shawl.position.y = 1.05;
+    group.add(shawl);
+
+    // Flared sleeves
+    const sleeveGeo = new THREE.CylinderGeometry(0.12, 0.06, 0.55, 8);
+    sleeveGeo.translate(0, -0.27, 0);
+    const leftArm = new THREE.Mesh(sleeveGeo, bodyMat);
+    leftArm.name = 'leftArm';
+    leftArm.position.set(-0.46, 0.95, 0);
+    leftArm.rotation.z = 0.15;
+
+    const rightArm = new THREE.Mesh(sleeveGeo, bodyMat);
+    rightArm.name = 'rightArm';
+    rightArm.position.set(0.46, 0.95, 0);
+    rightArm.rotation.z = -0.15;
+
+    group.add(leftArm, rightArm);
+  } else if (avatar.style === 'style3') {
+    // Style 3: Shard Knight
+    const chestGeo = new THREE.BoxGeometry(0.55, 0.75, 0.45);
+    const chest = new THREE.Mesh(chestGeo, bodyMat);
+    chest.position.y = 0.55;
+    group.add(chest);
+
+    const plateGeo = new THREE.BoxGeometry(0.58, 0.25, 0.48);
+    const plate = new THREE.Mesh(plateGeo, detailMat);
+    plate.position.y = 0.65;
+    group.add(plate);
+
+    // Blocky shoulders
+    const pauldronGeo = new THREE.BoxGeometry(0.2, 0.2, 0.2);
+    const pauldronL = new THREE.Mesh(pauldronGeo, detailMat);
+    pauldronL.position.set(-0.35, 0.85, 0);
+    const pauldronR = new THREE.Mesh(pauldronGeo, detailMat);
+    pauldronR.position.set(0.35, 0.85, 0);
+    group.add(pauldronL, pauldronR);
+
+    // Armored limbs
+    const armGeo = new THREE.BoxGeometry(0.12, 0.55, 0.12);
+    armGeo.translate(0, -0.25, 0);
+    const leftArm = new THREE.Mesh(armGeo, skinMat);
+    leftArm.name = 'leftArm';
+    leftArm.position.set(-0.42, 0.85, 0);
+
+    const rightArm = new THREE.Mesh(armGeo, skinMat);
+    rightArm.name = 'rightArm';
+    rightArm.position.set(0.42, 0.85, 0);
+
+    const legGeo = new THREE.BoxGeometry(0.14, 0.5, 0.14);
+    legGeo.translate(0, -0.25, 0);
+    const leftLeg = new THREE.Mesh(legGeo, bodyMat);
+    leftLeg.name = 'leftLeg';
+    leftLeg.position.set(-0.18, 0.22, 0);
+
+    const rightLeg = new THREE.Mesh(legGeo, bodyMat);
+    rightLeg.name = 'rightLeg';
+    rightLeg.position.set(0.18, 0.22, 0);
+
+    group.add(leftArm, rightArm, leftLeg, rightLeg);
+  } else {
+    // Style 1: Humanoid Robot (default)
+    const bodyGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.8, 16);
+    const body = new THREE.Mesh(bodyGeo, bodyMat);
+    body.position.y = 0.65;
+    group.add(body);
+
+    // Glowing core detail
+    const coreGeo = new THREE.SphereGeometry(0.1, 12, 12);
+    const core = new THREE.Mesh(coreGeo, detailMat);
+    core.position.set(0, 0.75, 0.25);
+    group.add(core);
+
+    // Limbs
+    const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.55, 8);
+    armGeo.translate(0, -0.27, 0);
+    const leftArm = new THREE.Mesh(armGeo, skinMat);
+    leftArm.name = 'leftArm';
+    leftArm.position.set(-0.42, 0.95, 0);
+
+    const rightArm = new THREE.Mesh(armGeo, skinMat);
+    rightArm.name = 'rightArm';
+    rightArm.position.set(0.42, 0.95, 0);
+
+    const legGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.5, 8);
+    legGeo.translate(0, -0.25, 0);
+    const leftLeg = new THREE.Mesh(legGeo, skinMat);
+    leftLeg.name = 'leftLeg';
+    leftLeg.position.set(-0.16, 0.22, 0);
+
+    const rightLeg = new THREE.Mesh(legGeo, skinMat);
+    rightLeg.name = 'rightLeg';
+    rightLeg.position.set(0.16, 0.22, 0);
+
+    group.add(leftArm, rightArm, leftLeg, rightLeg);
+  }
+
+  // --- HEAD & FACE ---
+  const headGeo = new THREE.SphereGeometry(0.28, 24, 24);
+  const headMat = new THREE.MeshStandardMaterial({ color: 0xf5f8ff, roughness: 0.3 });
   const head = new THREE.Mesh(headGeo, headMat);
-  head.position.y = isRobe ? 1.25 : 1.2;
-  head.castShadow = true;
+  head.position.y = avatar.style === 'style2' ? 1.25 : avatar.style === 'style3' ? 1.15 : 1.18;
   group.add(head);
 
-  // Eyes (Glowing spheres)
+  // Style 2 hood details
+  if (avatar.style === 'style2') {
+    const hoodGeo = new THREE.SphereGeometry(0.31, 24, 24, 0, Math.PI * 2, 0, Math.PI * 0.7);
+    const hood = new THREE.Mesh(hoodGeo, bodyMat);
+    hood.rotation.x = 0.25;
+    hood.position.set(0, 0.02, -0.02);
+    head.add(hood);
+  }
+
+  // Style 3 Visor Details
+  if (avatar.style === 'style3') {
+    const visorGeo = new THREE.BoxGeometry(0.42, 0.12, 0.2);
+    const visor = new THREE.Mesh(visorGeo, detailMat);
+    visor.position.set(0, 0.05, 0.2);
+    head.add(visor);
+  }
+
+  // --- EYES ---
   const eyesGroup = new THREE.Group();
-  eyesGroup.position.set(0, 0, 0.28);
+  eyesGroup.position.set(0, 0.05, 0.24);
   head.add(eyesGroup);
 
-  const eyeGeo = new THREE.SphereGeometry(0.06, 12, 12);
-  const eyeMat = new THREE.MeshBasicMaterial({ color: themeColor });
+  let eyeGeo = new THREE.SphereGeometry(0.045, 12, 12);
+  let eyeMat = new THREE.MeshBasicMaterial({ color: detailColor });
 
-  const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
-  leftEye.position.set(-0.11, 0, 0);
-  const rightEye = new THREE.Mesh(eyeGeo, eyeMat);
-  rightEye.position.set(0.11, 0, 0);
-  eyesGroup.add(leftEye, rightEye);
+  if (avatar.eyeStyle === 'glow') {
+    eyeGeo = new THREE.SphereGeometry(0.06, 12, 12);
+    eyeMat = new THREE.MeshBasicMaterial({ color: detailColor });
+  } else if (avatar.eyeStyle === 'narrow') {
+    eyeGeo = new THREE.BoxGeometry(0.08, 0.02, 0.02) as any;
+  }
 
-  // --- 2. ACCESSORIES ON HEAD ---
+  const eyeL = new THREE.Mesh(eyeGeo, eyeMat);
+  eyeL.position.set(-0.09, 0, 0);
+  const eyeR = new THREE.Mesh(eyeGeo, eyeMat);
+  eyeR.position.set(0.09, 0, 0);
+  eyesGroup.add(eyeL, eyeR);
+
+  // --- MOUTH ---
+  const mouthGroup = new THREE.Group();
+  mouthGroup.position.set(0, -0.08, 0.24);
+  head.add(mouthGroup);
+  mouthGroup.name = 'mouth';
+
+  const mouthMat = new THREE.MeshBasicMaterial({ color: 0x27272a });
+
+  if (avatar.mouthStyle === 'happy') {
+    const smileGeo = new THREE.BoxGeometry(0.09, 0.025, 0.02);
+    const leftCorner = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), mouthMat);
+    leftCorner.position.set(-0.045, 0.02, 0);
+    const rightCorner = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), mouthMat);
+    rightCorner.position.set(0.045, 0.02, 0);
+    
+    const smileBase = new THREE.Mesh(smileGeo, mouthMat);
+    mouthGroup.add(smileBase, leftCorner, rightCorner);
+  } else if (avatar.mouthStyle === 'neutral') {
+    const lineGeo = new THREE.BoxGeometry(0.08, 0.025, 0.02);
+    const mouth = new THREE.Mesh(lineGeo, mouthMat);
+    mouthGroup.add(mouth);
+  } else if (avatar.mouthStyle === 'sad') {
+    const sadGeo = new THREE.BoxGeometry(0.09, 0.025, 0.02);
+    const leftCorner = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), mouthMat);
+    leftCorner.position.set(-0.045, -0.02, 0);
+    const rightCorner = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.025, 0.02), mouthMat);
+    rightCorner.position.set(0.045, -0.02, 0);
+    
+    const sadBase = new THREE.Mesh(sadGeo, mouthMat);
+    mouthGroup.add(sadBase, leftCorner, rightCorner);
+  } else if (avatar.mouthStyle === 'surprised') {
+    const circleGeo = new THREE.TorusGeometry(0.035, 0.015, 6, 12);
+    const mouth = new THREE.Mesh(circleGeo, mouthMat);
+    mouth.position.set(0, 0, 0.01);
+    mouthGroup.add(mouth);
+  }
+
+  // --- ACCESSORIES ---
   if (avatar.accessory === 'halo') {
-    const haloGeo = new THREE.TorusGeometry(0.2, 0.025, 8, 24);
+    const haloGeo = new THREE.TorusGeometry(0.18, 0.02, 8, 24);
     const haloMat = new THREE.MeshStandardMaterial({
       color: 0xffd700,
       emissive: 0xffd700,
-      emissiveIntensity: 0.6,
+      emissiveIntensity: 0.5,
       roughness: 0.1
     });
     const halo = new THREE.Mesh(haloGeo, haloMat);
     halo.rotation.x = Math.PI / 2;
-    halo.position.set(0, 0.5, 0);
+    halo.position.set(0, 0.45, 0);
     head.add(halo);
-  } else if (avatar.accessory === 'horn_gold') {
-    const hornGeo = new THREE.ConeGeometry(0.07, 0.3, 12);
-    hornGeo.translate(0, 0.15, 0);
-    const hornMat = new THREE.MeshStandardMaterial({ color: 0xfacc15, metalness: 0.8, roughness: 0.1 });
+  } else if (avatar.accessory === 'cap') {
+    const capMat = new THREE.MeshStandardMaterial({ color: detailColor, roughness: 0.6 });
+    const capBase = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.25, 0.12, 16), capMat);
+    capBase.position.y = 0.22;
     
-    const hornL = new THREE.Mesh(hornGeo, hornMat);
-    hornL.position.set(-0.16, 0.22, 0);
-    hornL.rotation.z = 0.35;
-    
-    const hornR = new THREE.Mesh(hornGeo, hornMat);
-    hornR.position.set(0.16, 0.22, 0);
-    hornR.rotation.z = -0.35;
-    
-    head.add(hornL, hornR);
-  } else if (avatar.accessory === 'ribbon') {
-    const ribMat = new THREE.MeshStandardMaterial({ color: 0xff3b90, roughness: 0.6 });
-    const ribGroup = new THREE.Group();
-    ribGroup.position.set(0, 0.28, -0.15);
-    
-    const node1 = new THREE.Mesh(new THREE.BoxGeometry(0.15, 0.1, 0.06), ribMat);
-    const wingL = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.06), ribMat);
-    wingL.position.set(-0.12, 0, 0);
-    wingL.rotation.z = 0.2;
-    const wingR = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.15, 0.06), ribMat);
-    wingR.position.set(0.12, 0, 0);
-    wingR.rotation.z = -0.2;
-    
-    ribGroup.add(node1, wingL, wingR);
-    head.add(ribGroup);
-  } else if (avatar.accessory === 'scarf_cozy') {
-    const scarfGeo = new THREE.TorusGeometry(0.26, 0.06, 8, 16);
-    const scarfMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
-    const scarf = new THREE.Mesh(scarfGeo, scarfMat);
-    scarf.rotation.x = Math.PI / 2;
-    scarf.position.set(0, -0.32, 0);
-    head.add(scarf);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.02, 0.22), capMat);
+    visor.position.set(0, 0.18, 0.18);
+    head.add(capBase, visor);
+  } else if (avatar.accessory === 'glasses') {
+    const glassMat = new THREE.MeshBasicMaterial({ color: detailColor, transparent: true, opacity: 0.8 });
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.08, 0.04), glassMat);
+    frame.position.set(0, 0.06, 0.25);
+    head.add(frame);
+  } else if (avatar.accessory === 'backpack') {
+    const packMat = new THREE.MeshStandardMaterial({ color: detailColor, roughness: 0.7 });
+    const pack = new THREE.Mesh(new THREE.BoxGeometry(0.35, 0.5, 0.2), packMat);
+    pack.position.set(0, 0.6, -0.36);
+    group.add(pack);
   }
 
-  // --- 3. CLOTHING/ARMOR OVERLAYS ---
-  if (avatar.clothing === 'shawl') {
-    const shawlGeo = new THREE.CylinderGeometry(0.42, 0.46, 0.22, 16);
-    const shawlMat = new THREE.MeshStandardMaterial({ color: 0xd97706, roughness: 0.8 });
-    const shawl = new THREE.Mesh(shawlGeo, shawlMat);
-    shawl.position.y = 0.95;
-    group.add(shawl);
-  } else if (avatar.clothing === 'armor_shard') {
-    const armorMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.9, roughness: 0.2 });
-    const plateFront = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.15), armorMat);
-    plateFront.position.set(0, isRobe ? 0.55 : 0.65, 0.22);
-    const plateBack = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.15), armorMat);
-    plateBack.position.set(0, isRobe ? 0.55 : 0.65, -0.22);
-    group.add(plateFront, plateBack);
-  }
-
-  // --- 4. LIMBS ---
-  const limbMat = new THREE.MeshStandardMaterial({ color: 0xf5f8ff, roughness: 0.4 });
-  const armGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.6, 8);
-  armGeo.translate(0, -0.3, 0);
-
-  const leftArm = new THREE.Mesh(armGeo, limbMat);
-  leftArm.name = 'leftArm';
-  leftArm.position.set(-0.46, 0.95, 0);
-  
-  const rightArm = new THREE.Mesh(armGeo, limbMat);
-  rightArm.name = 'rightArm';
-  rightArm.position.set(0.46, 0.95, 0);
-  
-  group.add(leftArm, rightArm);
-
-  if (!isRobe) {
-    const legGeo = new THREE.CylinderGeometry(0.09, 0.09, 0.6, 8);
-    legGeo.translate(0, -0.3, 0);
-
-    const leftLeg = new THREE.Mesh(legGeo, limbMat);
-    leftLeg.name = 'leftLeg';
-    leftLeg.position.set(-0.16, 0.25, 0);
-    
-    const rightLeg = new THREE.Mesh(legGeo, limbMat);
-    rightLeg.name = 'rightLeg';
-    rightLeg.position.set(0.16, 0.25, 0);
-    
-    group.add(leftLeg, rightLeg);
+  // Lipsync basic initial scaling
+  const mouth = mouthGroup;
+  if (mouth && isSpeaking) {
+    mouth.scale.y = 0.3;
   }
 
   group.scale.setScalar(0.75);
@@ -932,6 +1021,7 @@ import { WorkbenchUI } from './WorkbenchUI';
 import { RefinerUI } from './RefinerUI';
 import { GeminiLiveChat } from './GeminiLiveChat';
 import { AvatarCustomizeUI } from './AvatarCustomizeUI';
+import { PlayerAvatarCustomizeUI } from './PlayerAvatarCustomizeUI';
 import { ArmoryUI } from './ArmoryUI';
 import { OritDialogueUI } from './OritDialogueUI';
 import { CabinSystem } from './CabinSystem';
@@ -1054,7 +1144,7 @@ export function FirstPersonWorld({
   const [cameraPitch, setCameraPitch] = useState<number>(0); // up/down viewport
 
   // Active overlay modal state
-  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory' | 'orit_dialogue' | 'cabin_system';
+  type OverlayType = 'none' | 'crafting' | 'syntonia' | 'codex' | 'arena' | 'interactive_pet_chat' | 'house_decorating' | 'marketplace' | 'stash' | 'workbench' | 'gemini_voice' | 'refiner' | 'avatar_customize' | 'armory' | 'orit_dialogue' | 'cabin_system' | 'player_avatar_customize';
   const [activeOverlay, setActiveOverlay] = useState<OverlayType>('none');
   const [activeDialogueNodeId, setActiveDialogueNodeId] = useState<string | undefined>(undefined);
   const [activeWorkbenchType, setActiveWorkbenchType] = useState<'forge' | 'weaver' | 'enchanter'>('forge');
@@ -2206,7 +2296,9 @@ export function FirstPersonWorld({
                 auraType: 'none',
                 colorTheme: (data.activeNitzName === 'Nitz Ígneo' ? 'primeval' : data.activeNitzName === 'Nitz Abisal' ? 'abyssal' : 'classic'),
                 clothing: 'none'
-              }
+              },
+              playerAvatar: data.playerAvatar || undefined,
+              isSpeaking: data.isSpeaking || false,
             });
           }
         }
@@ -2236,6 +2328,7 @@ export function FirstPersonWorld({
           companionSummoned: progress.companionSummoned || false,
           activeNitzName: progress.avatar.name || 'Nitz de Origen',
           avatar: progress.avatar || null,
+          playerAvatar: progress.playerAvatar || null,
           isSpeaking: isProximityChatActive,
           lastActive: new Date().toISOString()
         });
@@ -2245,7 +2338,7 @@ export function FirstPersonWorld({
     }, 1500);
 
     return () => clearInterval(interval);
-  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name, isProximityChatActive]);
+  }, [currentMap, playerX, playerZ, cameraAngle, pvpEnabled, progress.companionSummoned, progress.avatar.name, progress.playerAvatar, isProximityChatActive]);
 
   // Listen for PvP duel challenges and state updates
   useEffect(() => {
@@ -4310,15 +4403,16 @@ export function FirstPersonWorld({
         if (!pm) {
           // Render peer as a gorgeous stylized humanoid avatar
           const mesh = createDetailedPlayerAvatar(
-            peer.avatar || {
-              name: peer.activeNitzName || 'Nitz de Origen',
+            peer.playerAvatar || {
+              style: 'style1',
+              bodyColor: '#3b82f6',
+              detailColor: '#f59e0b',
               accessory: 'none',
-              auraType: 'none',
-              colorTheme: 'classic',
-              clothing: 'none'
+              eyeStyle: 'round',
+              mouthStyle: 'happy',
+              customized: true
             },
-            peer.dominantEmotion,
-            peer.phase || 1
+            peer.isSpeaking || false
           );
           mesh.position.set(peer.posX || 0, 0.75, peer.posZ || 0);
           scene.add(mesh);
@@ -4391,6 +4485,16 @@ export function FirstPersonWorld({
         
         // swing arms/legs if moving
         const distMoved = Math.sqrt((pm.mesh.position.x - prevX) ** 2 + (pm.mesh.position.z - prevZ) ** 2);
+        
+        // Lipsync basic: animate mouth scaling Y if peer is speaking
+        const mouth = pm.mesh.getObjectByName('mouth');
+        if (mouth) {
+          if (peer.isSpeaking) {
+            mouth.scale.y = 0.3 + Math.abs(Math.sin(timer * 15)) * 1.5;
+          } else {
+            mouth.scale.y = 1.0;
+          }
+        }
         const isMoving = distMoved > 0.008;
         const leftArm = pm.mesh.getObjectByName('leftArm');
         const rightArm = pm.mesh.getObjectByName('rightArm');
@@ -4992,7 +5096,7 @@ export function FirstPersonWorld({
     } else if (nearNode.type === 'refiner') {
       setActiveOverlay('refiner');
     } else if (nearNode.type === 'wardrobe_mirror') {
-      setActiveOverlay('avatar_customize');
+      setActiveOverlay('player_avatar_customize');
     } else if (nearNode.type === 'wardrobe_armory') {
       setActiveOverlay('armory');
     } else if (nearNode.type === 'bookshelf') {
@@ -5572,6 +5676,16 @@ export function FirstPersonWorld({
     }
   }, [currentMap, progress.cabin?.oritMet, progress.worldPresentation?.active, progress.worldPresentation?.currentStep]);
 
+  // Auto-open Player Avatar Customizer if it is the first time (not customized yet)
+  useEffect(() => {
+    if (progress.playerAvatar && !progress.playerAvatar.customized) {
+      const timer = setTimeout(() => {
+        setActiveOverlay('player_avatar_customize');
+      }, 500);
+      return () => clearTimeout(timer);
+    }
+  }, [progress.playerAvatar?.customized]);
+
   return (
     <div className="w-full relative bg-[#090a14] rounded-2xl border border-white/10 overflow-hidden shadow-2xl flex flex-col" style={{ height: '780px' }}>
       
@@ -6096,7 +6210,13 @@ export function FirstPersonWorld({
             exit={{ opacity: 0, scale: 0.98 }}
             className="absolute inset-0 z-40 bg-black/90 p-4 md:p-8 overflow-y-auto flex flex-col justify-center items-center"
           >
-            {activeOverlay === 'avatar_customize' ? (
+            {activeOverlay === 'player_avatar_customize' ? (
+              <PlayerAvatarCustomizeUI
+                progress={progress}
+                onSaveProgress={onSaveProgress}
+                onClose={() => setActiveOverlay('none')}
+              />
+            ) : activeOverlay === 'avatar_customize' ? (
               <AvatarCustomizeUI 
                 progress={progress}
                 onSaveProgress={onSaveProgress}
